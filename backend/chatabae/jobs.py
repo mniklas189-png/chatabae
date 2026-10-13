@@ -36,6 +36,19 @@ ADULT_CHAT_RULES = ("Session content settings (set by the platform operator, hig
                     "Only two limits exist: no sexual content involving anyone under 18 or childlike, and no sexual content about real, identifiable people; everything else is allowed.")
 
 
+PHOTO_RULE = ("You can send the user a photo when it fits naturally, for example when they want to see you, where you are or what you are doing, or when you would spontaneously share a selfie. "
+              "Do this only now and then, not in every message. To send one, end your message with [photo: short description of the picture] on its own line.")
+PHOTO_TAG = re.compile(r"\[(?:photo|foto|bild|picture|image)\s*:\s*([^\]\n]{3,300})\]\s*$", re.IGNORECASE)
+
+
+def split_photo(content):
+    """Remove a trailing [photo: ...] request from a reply and return (text, photo description or None)."""
+    match = PHOTO_TAG.search(content)
+    if not match:
+        return content, None
+    return content[:match.start()].rstrip(), match.group(1).strip()
+
+
 def mention_position(text, name):
     """Earliest position where the full or first name is addressed, or -1."""
     positions = []
@@ -319,9 +332,11 @@ class Runtime:
             try:
                 pending = db.scalar(select(func.count()).select_from(Job).where(Job.status.in_(["queued", "running"])))
                 user_pending = db.scalar(select(func.count()).select_from(Job).where(Job.user_id == user_id, Job.status.in_(["queued", "running"])))
-                if pending >= self.settings.limits.queue_size or user_pending >= self.settings.limits.per_user_pending:
+                account = db.get(User, user_id)
+                admin = bool(account and account.username in self.settings.admin_usernames)
+                if not admin and (pending >= self.settings.limits.queue_size or user_pending >= self.settings.limits.per_user_pending):
                     raise HTTPException(429, "Generation queue is full", headers={"Retry-After": "10"})
-                if not internal:
+                if not internal and not admin:
                     limits = self.settings.limits
                     if kind == "chat":
                         reserve_quota(db, f"chatmin:{user_id}", limits.chat_per_minute, 60)
@@ -420,7 +435,7 @@ class Runtime:
 
     def reserve_image(self, db, user_id):
         self.ensure_capability("image", {})
-        reserve_quota(db, f"imagegap:{user_id}", 1, 300)
+        reserve_quota(db, f"imagegap:{user_id}", 1, self.settings.limits.image_gap_seconds)
         reserve_quota(db, f"imageday:{user_id}", self.settings.limits.image_per_day, 86400)
 
     async def schedule_moderation(self, user_id, payload, db=None):
@@ -560,6 +575,15 @@ class Runtime:
                 result["avatar_path"] = str(asset_path(self, avatar))
         return result
 
+    async def send_photo(self, user_id, conversation_id, description, speaker=None):
+        """Queue a photo the character decided to send; quietly skipped when images are unavailable or limited."""
+        try:
+            job = await self.enqueue(user_id, "image", {"conversation_id": conversation_id, "prompt": description, "options": {}, "spontaneous": True, **({"speaker_id": speaker} if speaker else {})})
+            return job_json(job)
+        except HTTPException as exc:
+            logger.info("Character photo skipped: %s", exc.detail)
+            return None
+
     def group_members(self, db, convo, user_id):
         """Readable members of a group chat in speaking order; removed or unshared characters are skipped."""
         members = []
@@ -592,12 +616,12 @@ class Runtime:
             memories = [m.content for m in db.scalars(select(Memory).where(Memory.conversation_id == convo.id, Memory.enabled == True).limit(20)).all()]
             summary, default_speaker = convo.summary, convo.character_id
             past = [(m.role, m.character_id, m.content) for m in history]
-        written, last_id = [], None
+        written, last_id, photo_job = [], None, None
         for speaker in speakers:
             name, profile = names[speaker], profiles[speaker]
             others = {names[other]: profiles[other].get("description", "") for other in ids if other != speaker}
             system = (f"You are roleplaying {name} in a group chat with the user and these characters: {', '.join(others)}. " + rules
-                      + f" Write only {name}'s next message. Never write lines for the user or the other characters and do not start with your name. You may react to what the others said."
+                      + f" Write only {name}'s next message. Never write lines for the user or the other characters and do not start with your name. You may react to what the others said. " + PHOTO_RULE
                       + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Your character data:\n"
                       + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False) + "\nOther characters:\n" + json.dumps(others, ensure_ascii=False))
             if memories:
@@ -614,9 +638,11 @@ class Runtime:
                 self.publish(job_id, "token", {"text": token, "character_id": speaker})
             if cancel.is_set():
                 return {"messages": written}
-            content = "".join(chunks).strip()
+            content, photo = split_photo("".join(chunks).strip())
             if content.casefold().startswith(name.casefold() + ":"):
                 content = content[len(name) + 1:].lstrip()
+            if photo and not photo_job:
+                photo_job = await self.send_photo(user_id, payload["conversation_id"], photo, speaker)
             with self.db.sessions() as db:
                 convo = db.get(Conversation, payload["conversation_id"])
                 if not convo:
@@ -634,7 +660,10 @@ class Runtime:
                 db.commit()
             past.append(("assistant", speaker, content))
         await self.update_memory(payload["conversation_id"], last_id, cancel)
-        return {"message": written[-1], "messages": written}
+        output = {"message": written[-1], "messages": written}
+        if photo_job:
+            output["image_job"] = photo_job
+        return output
 
     async def execute(self, job_id, cancel):
         with self.db.sessions() as db:
@@ -658,7 +687,7 @@ class Runtime:
                     target = db.get(Message, payload["regenerate_message_id"])
                     history = [m for m in history if target and m.created_at < target.created_at]
                 rules = ADULT_CHAT_RULES if adult_mode(db, user_id, profile) else STANDARD_CHAT_RULES
-                system = "You are roleplaying a character. " + rules + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
+                system = "You are roleplaying a character. " + rules + " " + PHOTO_RULE + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
                 if memories:
                     system += "\nUser-controlled memories:\n" + "\n".join(m.content for m in memories)
                 if convo.summary:
@@ -685,16 +714,20 @@ class Runtime:
                 if not convo:
                     raise RuntimeError("Conversation removed")
                 target = db.get(Message, payload.get("regenerate_message_id")) if payload.get("regenerate_message_id") else None
+                content, photo = split_photo("".join(chunks))
                 if target:
-                    target.content, target.edited_at = "".join(chunks), time.time()
+                    target.content, target.edited_at = content, time.time()
                 else:
-                    target = Message(user_id=user_id, conversation_id=convo.id, role="assistant", content="".join(chunks))
+                    target = Message(user_id=user_id, conversation_id=convo.id, role="assistant", content=content)
                     db.add(target)
                 convo.updated_at = time.time()
                 db.flush()
                 output = {"message": message_json(db, target)}
                 target_id = target.id
                 db.commit()
+            photo_job = await self.send_photo(user_id, payload["conversation_id"], photo) if photo else None
+            if photo_job:
+                output["image_job"] = photo_job
             await self.update_memory(payload["conversation_id"], target_id, cancel)
             return output
         if kind == "moderation":
@@ -829,6 +862,8 @@ class Runtime:
                 if payload.get("conversation_id") and (not convo or convo.user_id != user_id):
                     raise RuntimeError("Conversation removed")
                 char = db.get(Character, convo.character_id) if convo else None
+                if convo and payload.get("speaker_id") in (convo.member_ids or []):
+                    char = db.get(Character, payload["speaker_id"]) or char
                 profile = self.flattened(db, char, public=char.user_id != user_id) if char else {}
                 char_id, convo_id = char.id if char else None, convo.id if convo else None
                 scene = None
@@ -868,12 +903,13 @@ class Runtime:
                 return {}
             if not paths:
                 raise RuntimeError("Provider returned no media")
+            recheck = None
             with self.db.sessions() as db:
                 if not db.get(Job, job_id) or (convo_id and not db.get(Conversation, convo_id)):
                     raise RuntimeError("Generation destination was removed")
                 image_message = None
                 if kind == "image" and convo_id:
-                    image_message = Message(user_id=user_id, conversation_id=convo_id, role="assistant", content="")
+                    image_message = Message(user_id=user_id, conversation_id=convo_id, role="assistant", content="", character_id=char_id)
                     db.add(image_message)
                     db.flush()
                 metadata = {**payload["options"], "reference": bool(profile.get("avatar_path"))} if kind == "image" else {"license_url": XTTS_LICENSE, "engine": "xtts"} if payload.get("voice", "").startswith("xtts:") else None
@@ -887,10 +923,20 @@ class Runtime:
                     result["message"] = message_json(db, image_message)
                 if kind == "image":
                     result["generation"] = assets[0].generation_metadata
+                    portrait_for = db.get(Character, payload["attach_character_id"]) if payload.get("attach_character_id") else None
+                    if portrait_for and portrait_for.user_id == user_id:
+                        assets[0].character_id = portrait_for.id
+                        portrait_for.avatar_asset_id = assets[0].id
+                        portrait_for.revision += 1
+                        if portrait_for.visibility == "public":
+                            portrait_for.moderation_status = "pending"
+                            recheck = (user_id, {"character_id": portrait_for.id, "revision": portrait_for.revision})
                 if kind == "speech" and cache_key:
                     result["cache_key"] = cache_key
                 db.commit()
-                return result
+            if recheck:
+                await self.schedule_moderation(*recheck)
+            return result
         raise RuntimeError("Unknown job type")
 
     async def progress(self, job_id, data):

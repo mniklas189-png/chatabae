@@ -32,6 +32,10 @@ def owned(db, model, identifier, user):
     return record
 
 
+def is_admin(settings, user):
+    return bool(user and user.username in settings.admin_usernames)
+
+
 def shows_adult(user):
     return bool(user and user.adult_confirmed_at is not None)
 
@@ -94,7 +98,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                     with rt.db.sessions() as db:
                         if request.method != "DELETE":
                             storage_check(rt, db, user.id)
-                        reserve_quota(db, f"writes:{user.id}", 60, 60)
+                        if not is_admin(settings, user):
+                            reserve_quota(db, f"writes:{user.id}", 60, 60)
                         db.commit()
             except HTTPException as exc:
                 return JSONResponse({"detail": exc.detail}, exc.status_code, headers=exc.headers)
@@ -243,7 +248,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
     async def add_character(body: CharacterInput, user: User = Depends(current_user)):
         with rt.db.sessions() as db:
             storage_check(rt, db, user.id)
-            reserve_quota(db, f"profilechanges:{user.id}", settings.limits.profile_per_day, 86400)
+            if not is_admin(settings, user):
+                reserve_quota(db, f"profilechanges:{user.id}", settings.limits.profile_per_day, 86400)
             char = Character(user_id=user.id, **body.model_dump())
             db.add(char)
             db.flush()
@@ -278,7 +284,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                 raise HTTPException(422, "Character values are invalid") from None
             if char.visibility == "public" and verified.visibility == "private":
                 preserve_shared_conversations(db, char)
-            reserve_quota(db, f"profilechanges:{user.id}", settings.limits.profile_per_day, 86400)
+            if not is_admin(settings, user):
+                reserve_quota(db, f"profilechanges:{user.id}", settings.limits.profile_per_day, 86400)
             for key, value in verified.model_dump().items():
                 setattr(char, key, value)
             char.revision += 1
@@ -476,7 +483,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
         with rt.db.sessions() as db:
             convo = owned(db, Conversation, identifier, user)
             char, public = readable_char(db, convo.character_id, user)
-            active = db.scalars(select(Job).where(Job.user_id == user.id, Job.kind.in_(["chat", "image"]), Job.status.in_(["queued", "running"]))).all()
+            # Images generate in the background, so only another chat reply blocks a new message.
+            active = db.scalars(select(Job).where(Job.user_id == user.id, Job.kind == "chat", Job.status.in_(["queued", "running"]))).all()
             if any(job.payload.get("conversation_id") == identifier for job in active):
                 raise HTTPException(409, "A turn is already running in this conversation")
             message = Message(user_id=user.id, conversation_id=identifier, role="user", content=body.content)
@@ -638,7 +646,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
         except (wave.Error, ValueError, ZeroDivisionError, EOFError):
             raise HTTPException(422, "Use a 6–30 second PCM WAV sample, 8–48 kHz and 16-bit") from None
         with rt.db.sessions() as db:
-            reserve_quota(db, f"voiceref:{user.id}", 5, 86400)
+            if not is_admin(settings, user):
+                reserve_quota(db, f"voiceref:{user.id}", 5, 86400)
             asset = adopt(rt, db, user.id, data, "voice_reference")
             db.commit()
             return {"id": "xtts:ref:" + asset.id, "name": "Eigene Stimme " + asset.id[:8], "reference_asset_id": asset.id, "engine": "xtts", "language": "de", "available": True}
@@ -914,5 +923,18 @@ def create_admin_app(settings: Settings | None = None, public_app: FastAPI | Non
             char.approved_snapshot = public_snapshot(char.approved_internal) if char.approved_internal else None
             db.commit()
             return character_json(char)
+
+    @app.post("/internal/portraits")
+    async def missing_portraits():
+        """Queue an AI portrait for every character that has no profile picture yet."""
+        with rt.db.sessions() as db:
+            missing = db.scalars(select(Character).where(Character.avatar_asset_id.is_(None))).all()
+            drafts = [(char.user_id, char.id, {"name": char.name, "description": char.description, "age": char.profile.get("age", 25), "gender": char.profile.get("gender", ""), "appearance": char.profile.get("appearance", ""), "fictional": True}) for char in missing]
+        jobs = []
+        for owner, character_id, profile in drafts:
+            prompt = "Portrait of this character, facing the viewer, suitable as a profile picture"
+            job = await rt.enqueue(owner, "image", {"avatar": profile, "prompt": prompt, "options": {"preset": "fast", "width": 1024, "height": 1024}, "attach_character_id": character_id}, internal=True)
+            jobs.append({"character_id": character_id, "job_id": job.id})
+        return {"queued": jobs}
 
     return app

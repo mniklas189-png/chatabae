@@ -66,11 +66,29 @@ def user_json(user: User):
     return {"id": user.id, "username": user.username, "adult_content": user.adult_confirmed_at is not None}
 
 
+QUOTA_LABELS = {
+    "writes": "Change", "profilechanges": "Daily character change", "voiceref": "Daily voice upload", "reports": "Daily report",
+    "recovery": "Password reset", "login": "Sign-in attempt", "loginip": "Sign-in attempt", "register": "Registration", "registerday": "Daily registration",
+    "chatmin": "Message", "chatday": "Daily message", "hqday": "Daily HQ voice", "ttsmin": "Voice", "profileday": "Daily AI profile",
+    "avatarday": "Daily profile picture", "imagegap": "Image", "imageday": "Daily image",
+}
+
+
+def quota_message(key: str, limit: int, window: int, retry: int) -> str:
+    """Name the limit, its size and when it resets instead of a bare "Rate limit reached"."""
+    label = QUOTA_LABELS.get(key.split(":", 1)[0], "Request")
+    period = {60: "minute", 300: "5 minutes", 900: "15 minutes", 3600: "hour", 86400: "day"}.get(window, f"{window} seconds")
+    hours, minutes = divmod(max(1, -(-retry // 60)), 60)
+    wait = f"{hours} h {minutes} min" if hours else f"{minutes} min"
+    return f"{label} limit reached ({limit} per {period}). Try again in {wait}."
+
+
 def reserve_quota(db, key: str, limit: int, window: int):
     bucket = f"{key}:{int(time.time() // window)}"
     entry = db.get(Quota, bucket)
     if entry and entry.count >= limit:
-        raise HTTPException(429, "Rate limit reached", headers={"Retry-After": str(window - int(time.time()) % window)})
+        retry = window - int(time.time()) % window
+        raise HTTPException(429, quota_message(key, limit, window, retry), headers={"Retry-After": str(retry)})
     if entry:
         entry.count += 1
     else:

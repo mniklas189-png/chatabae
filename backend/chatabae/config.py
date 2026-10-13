@@ -14,6 +14,7 @@ class Limits(BaseModel):
     chat_per_minute: int = Field(4, ge=1)
     chat_per_day: int = Field(100, ge=1)
     image_per_day: int = Field(3, ge=1)
+    image_gap_seconds: int = Field(300, ge=1, le=86400)
     avatar_per_day: int = Field(10, ge=1)
     hq_tts_per_day: int = Field(5, ge=1)
     tts_per_minute: int = Field(10, ge=1)
@@ -53,6 +54,8 @@ class Settings(BaseModel):
     access_seconds: int = 900
     refresh_seconds: int = 30 * 86400
     registration_enabled: bool = True
+    # Accounts listed here (private config) are exempt from all per-account limits and quotas.
+    admin_usernames: list[str] = Field(default_factory=list)
     backups_enabled: bool = True
     metrics_enabled: bool = True
 

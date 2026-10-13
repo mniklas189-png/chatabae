@@ -96,3 +96,63 @@ def test_adult_public_characters_are_only_listed_for_confirmed_adults(service):
     client.put("/api/v1/me/adult-content", headers=bob, json={"enabled": True, "confirm_adult": True})
     assert [c["id"] for c in client.get("/api/v1/library", headers=bob).json()] == [shared["id"]]
     assert client.get(f"/api/v1/characters/{shared['id']}", headers=bob).status_code == 200
+
+
+def test_limit_errors_name_the_limit_and_when_it_resets(service):
+    from chatabae.auth import quota_message
+    assert quota_message("imageday:user", 3, 86400, 5400) == "Daily image limit reached (3 per day). Try again in 1 h 30 min."
+    assert quota_message("chatmin:user", 4, 60, 12) == "Message limit reached (4 per minute). Try again in 1 min."
+    client, _, _ = service
+    headers, _, _ = register(client)
+    character = make_character(client, headers, "Ada")
+    convo = client.post("/api/v1/conversations", headers=headers, json={"character_id": character["id"], "title": "x"}).json()
+    assert client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait"}).status_code == 202
+    second = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait"})
+    assert second.status_code == 429 and second.json()["detail"].startswith("Image limit reached (1 per 5 minutes)")
+
+
+def test_characters_send_photos_on_their_own_and_the_tag_is_not_saved(service):
+    from chatabae.jobs import split_photo
+    assert split_photo("Look!\n[photo: me at the beach]") == ("Look!", "me at the beach")
+    assert split_photo("No photo here [photo: x]. More text") == ("No photo here [photo: x]. More text", None)
+    client, _, provider = service
+    headers, _, _ = register(client)
+    character = make_character(client, headers, "Ada")
+    convo = client.post("/api/v1/conversations", headers=headers, json={"character_id": character["id"], "title": "x"}).json()
+    provider.reply_tokens = ["Here, just for you!", "\n[photo: a selfie on the beach at sunset]"]
+    job = turn(client, headers, convo, "What are you doing?")
+    assert job["output"]["message"]["content"] == "Here, just for you!" and "PHOTO" in provider.received_chat[-1][0]["content"].upper()
+    photo = wait_job(client, headers, job["output"]["image_job"]["id"])
+    assert photo["status"] == "completed" and provider.composed[-1]["request"] == "a selfie on the beach at sunset"
+
+
+def test_messages_can_be_sent_while_an_image_is_generating(service):
+    client, _, provider = service
+    headers, _, _ = register(client)
+    character = make_character(client, headers, "Ada")
+    convo = client.post("/api/v1/conversations", headers=headers, json={"character_id": character["id"], "title": "x"}).json()
+    provider.image_delay = 0.5
+    image = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait"}).json()
+    message = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "Hi while you paint"})
+    assert message.status_code == 202
+    assert wait_job(client, headers, message.json()["job"]["id"])["status"] == "completed"
+    assert wait_job(client, headers, image["id"])["status"] == "completed"
+
+
+def test_admin_accounts_have_no_limits_and_can_backfill_portraits(service):
+    from fastapi.testclient import TestClient
+    from chatabae.app import create_admin_app
+    client, app, _ = service
+    app.state.runtime.settings.admin_usernames = ["alice"]
+    headers, _, _ = register(client, "alice")
+    character = make_character(client, headers, "Ada")
+    convo = client.post("/api/v1/conversations", headers=headers, json={"character_id": character["id"], "title": "x"}).json()
+    for _ in range(4):
+        job = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait"})
+        assert job.status_code == 202, job.text
+        wait_job(client, headers, job.json()["id"])
+    with TestClient(create_admin_app(app.state.runtime.settings, app)) as admin:
+        queued = admin.post("/internal/portraits", headers={"Authorization": "Bearer test-control-secret"}).json()["queued"]
+    assert [entry["character_id"] for entry in queued] == [character["id"]]
+    assert wait_job(client, headers, queued[0]["job_id"])["status"] == "completed"
+    assert client.get(f"/api/v1/characters/{character['id']}", headers=headers).json()["avatar_asset_id"]

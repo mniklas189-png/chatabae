@@ -366,6 +366,34 @@ describe('character space', () => {
     await waitFor(() => expect(calls).toEqual(['DELETE']));
     await screen.findByRole('button', { name: 'Favorite', pressed: false });
   });
+  it('keeps the conversation usable while an image is generating', async () => {
+    let imageEvents: ReadableStreamDefaultController<Uint8Array> | undefined; const encoder = new TextEncoder(); const sent: string[] = [];
+    const reply: Message = { id: 'live-reply', conversation_id: conversation.id, role: 'assistant', content: 'Still here!', assets: [], created_at: conversation.created_at, edited_at: null };
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/images')) return body(job('slow-image', 'image'), 202);
+      if (url.includes('/jobs/slow-image/events')) return new Response(new ReadableStream({ start(controller) { imageEvents = controller; } }), { headers: { 'Content-Type': 'text/event-stream' } });
+      if (url.endsWith('/messages') && init?.method === 'POST') { const content = JSON.parse(String(init.body)).content; sent.push(content); return body({ message: { ...reply, id: 'user-line', role: 'user', content }, job: job('chat-job', 'chat') }, 202); }
+      if (url.includes('/jobs/chat-job/events')) return completed({ message: reply });
+      if (url.endsWith('/messages')) return body(sent.length ? [reply] : []);
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create image' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Describe the image you’d like to create' }), { target: { value: 'A sunset' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create image' }));
+    await screen.findByRole('status', { name: 'Creating image…' });
+    await waitFor(() => expect(imageEvents).toBeTruthy());
+    const composer = screen.getByPlaceholderText('Write a message…');
+    fireEvent.change(composer, { target: { value: 'Hello while you paint' } });
+    fireEvent.submit(composer.closest('form')!);
+    await waitFor(() => expect(sent).toEqual(['Hello while you paint']));
+    expect(await screen.findByText('Still here!')).toBeTruthy();
+    expect(screen.getByRole('status', { name: 'Creating image…' })).toBeTruthy();
+    imageEvents!.enqueue(encoder.encode('id: 1\nevent: completed\ndata: {"output":{"assets":[]}}\n\n')); imageEvents!.close();
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Creating image…' })).toBeNull());
+  });
   it('locks image format to the stable character reference portrait', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/content') ? new Response(new Blob(['portrait'], { type: 'image/png' })) : signedInResponse(url, [{ ...character, avatar_asset_id: 'canonical-avatar' }])));
     render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);

@@ -28,6 +28,9 @@ class FakeProviders:
         self.received_images = []
         self.image_options = []
         self.image_moderation = []
+        self.reply_tokens = ["Hello", " fictional", " friend."]
+        self.image_delay = 0.0
+        self.image_prompts = []
         self.composed = []
         self.hold_image_result = False
         self.speech_version = "test-model-v1"
@@ -46,7 +49,7 @@ class FakeProviders:
         self.started.append("chat")
         self.received_chat.append(messages)
         self.received_generations.append(generation)
-        for token in ["Hello", " fictional", " friend."]:
+        for token in self.reply_tokens:
             await asyncio.sleep(self.chat_delay)
             if cancel_event.is_set():
                 raise asyncio.CancelledError()
@@ -75,6 +78,8 @@ class FakeProviders:
         self.started.append("image")
         self.received_images.append(profile)
         self.image_options.append(options)
+        self.image_prompts.append(prompt)
+        await asyncio.sleep(self.image_delay)
         await progress_callback({"stage": "sampling", "value": 0.5})
         target = self.root / "test-provider-image.png"
         Image.new("RGB", (64, 64), "orange").save(target)

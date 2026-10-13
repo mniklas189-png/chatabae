@@ -601,7 +601,7 @@ class ProviderManager:
                   "Write one English image prompt that shows exactly this character, consistent with their described appearance and age, in the place and situation they are in right now according to the latest messages "
                   "(location, time of day, outfit, pose, expression, what they are doing), and that fulfils the user's image request. If the request is about the character themselves (e.g. what they look like, a selfie), show them clearly in their current setting. "
                   "If other characters are present and the request or scene involves them, include them consistent with their described appearance. Infer fitting details that are not stated. Match the visual style implied by the character or request, otherwise a natural photographic look. 40 to 120 words, plain prose. Never name real people. "
-                  + ("The user and character are adults; adult content is allowed if requested, but never depict minors or childlike bodies sexually." if adult else "Keep it nonsexual.")
+                  + ("The user and character are adults. When the request or scene involves nudity or sex, describe it explicitly and concretely: say that the character is nude or naked, which body parts are visible, the pose and the action; never cover it with clothing, towels, sheets or cropping. Never depict minors or childlike bodies sexually." if adult else "Keep it nonsexual.")
                   + " Return JSON {\"prompt\": string}.")
         schema = {"type": "object", "properties": {"prompt": {"type": "string", "minLength": 10, "maxLength": 1500}}, "required": ["prompt"], "additionalProperties": False}
         result = await self._completion_json([
@@ -772,8 +772,8 @@ class ProviderManager:
             appearance = profile.get("appearance", "")
             lead = f"Create an image of this adult character, age {profile.get('age', 25)}. " if profile.get("content_mode") == "adult" else f"Create a nonsexual portrait or scene of this character, age {profile.get('age', 25)}. "
             instruction = (lead +
-                           f"Appearance: {appearance}. {prompt}. "
-                           + ("Use <image1> as the identity reference. Preserve facial identity and the character's age." if references else ""))
+                           f"Character appearance (body and face; the scene decides clothing): {appearance}. Scene: {prompt}. "
+                           + ("Use <image1> only as the face and identity reference: keep the face, hair and skin tone, but do not copy its clothing, pose, framing or background; follow the scene instead. Preserve the character's age." if references else ""))
             response = await _until_cancelled(client.post(self._image_url + "/prompt", json={"prompt": self._image_graph(instruction, options, references, prefix), "client_id": client_id}), cancel_event)
             response.raise_for_status()
             prompt_id = response.json().get("prompt_id")
