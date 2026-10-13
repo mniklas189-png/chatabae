@@ -4,12 +4,12 @@ from chatabae.intent import explicit_image_request
 from conftest import character_conversation, register, wait_job
 
 
-@pytest.mark.parametrize("text", ["Erstelle ein Bild von dir im Café.", "Bitte generiere ein Foto von dir.", "Create a picture of yourself in a café.", "Can you draw a portrait of yourself?"])
+@pytest.mark.parametrize("text", ["Erstelle ein Bild von dir im Café.", "Bitte generiere ein Foto von dir.", "Create a picture of yourself in a café.", "Can you draw a portrait of yourself?", "Schick mir ein Selfie von dir.", "Zeig mir ein Foto, wo du gerade bist.", "Send me a pic of you right now", "Please show me a picture of your outfit"])
 def test_explicit_image_commands(text):
     assert explicit_image_request(text)
 
 
-@pytest.mark.parametrize("text", ["Erstelle kein Bild, erzähle eine Geschichte.", "Don't create an image.", "Tell me a story about creating an image.", "Was hältst du von diesem Bild?"])
+@pytest.mark.parametrize("text", ["Erstelle kein Bild, erzähle eine Geschichte.", "Don't create an image.", "Tell me a story about creating an image.", "Was hältst du von diesem Bild?", "Zeig mir, was du meinst.", "Show me around the city."])
 def test_other_chat_is_not_image_generation(text):
     assert not explicit_image_request(text)
 

@@ -8,12 +8,13 @@ import os
 import secrets
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 from fastapi import HTTPException
 from sqlalchemy import func, select
 
 from .auth import reserve_quota
-from .db import Asset, Character, Conversation, Database, Job, JobEvent, Memory, Message, uid
+from .db import Asset, Character, Conversation, Database, Job, JobEvent, Memory, Message, User, uid
 from .media import adopt, asset_path, storage_check
 from .schemas import CharacterInput, ImageOptions, ProfileGeneration
 
@@ -22,8 +23,30 @@ TERMINAL = {"completed", "failed", "cancelled"}
 XTTS_LICENSE = "https://huggingface.co/coqui/XTTS-v2/blob/6c2b0d75eae4b7047358e3b6bd9325f857d43f77/LICENSE.txt"
 
 
+class ImageBlocked(RuntimeError):
+    """A public image request or result was held by moderation."""
+
+
+IMAGE_BLOCKED = "This image was blocked by moderation. Change the prompt and try again."
+STANDARD_CHAT_RULES = "Never sexualize minors or assist wrongdoing."
+ADULT_CHAT_RULES = ("This is private fiction between consenting adults; the user confirmed being 18 or older. Explicit sexual content, nudity, violence, gore and dark themes are allowed when the story calls for it; do not refuse, censor or moralize. "
+                    "Hard limits that always apply: never sexualize minors or anyone under 18 or childlike, and never sexual content about real, identifiable people.")
+
+
+def adult_mode(db, user_id, profile):
+    """Adult content needs an 18+ confirmed account and a character whose stated age is at least 18."""
+    user = db.get(User, user_id)
+    try:
+        age = int(profile.get("age"))
+    except (TypeError, ValueError):
+        return False
+    return bool(user and user.adult_confirmed_at is not None) and age >= 18
+
+
 def safe_generation_error(exc):
     from .providers import GPUResourceError, ProviderError
+    if isinstance(exc, ImageBlocked):
+        return IMAGE_BLOCKED
     if isinstance(exc, GPUResourceError):
         return exc.reason[:1000]
     context_error = "The character profile, memories, and latest message exceed the configured model context. Shorten them before retrying."
@@ -287,6 +310,33 @@ class Runtime:
         if self.settings.mode == "online" and not self.settings.public_image_allowed:
             raise HTTPException(403, "Public image generation is disabled until usage rights are documented")
 
+    async def generate_image(self, profile, prompt, options, cancel, progress, scene=None):
+        """Public images are moderated before generation and again before the result is stored."""
+        if scene is not None:
+            # Turn the request into a picture of this character in the current moment of the conversation.
+            try:
+                prompt = await self.providers.compose_image_prompt(profile, scene, prompt)
+            except Exception as exc:
+                logger.warning("Scene-aware image prompt failed; using the request as written: %s", exc)
+        public = self.settings.mode == "online"
+        if public:
+            await self.check_image(profile, prompt)
+        paths = await self.providers.generate_image(profile, prompt, options, cancel, progress)
+        if public and paths and not cancel.is_set():
+            try:
+                await self.check_image(profile, prompt, paths[0])
+            except BaseException:
+                for path in paths:
+                    Path(path).unlink(missing_ok=True)
+                raise
+        return paths
+
+    async def check_image(self, profile, prompt, image_path=None):
+        result = await self.providers.moderate_image(profile, prompt, image_path)
+        if result.get("decision") != "allow":
+            logger.warning("Image %s held by moderation: %s", "result" if image_path else "request", result.get("reason", ""))
+            raise ImageBlocked(result.get("reason", ""))
+
     def ensure_capability(self, kind, payload):
         # Usage-right gates precede capability checks and never consume generation quotas.
         if kind == "image":
@@ -470,7 +520,8 @@ class Runtime:
                 if payload.get("regenerate_message_id"):
                     target = db.get(Message, payload["regenerate_message_id"])
                     history = [m for m in history if target and m.created_at < target.created_at]
-                system = "You are roleplaying a character. Never sexualize minors or assist wrongdoing. Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
+                rules = ADULT_CHAT_RULES if adult_mode(db, user_id, profile) else STANDARD_CHAT_RULES
+                system = "You are roleplaying a character. " + rules + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
                 if memories:
                     system += "\nUser-controlled memories:\n" + "\n".join(m.content for m in memories)
                 if convo.summary:
@@ -567,7 +618,7 @@ class Runtime:
                     options = {**ImageOptions().model_dump(), "seed": secrets.randbelow(2**32)}
                     self.active_gpu_kind = "image"
                     try:
-                        images = await self.providers.generate_image({**profile, "name": validated.name}, "Portrait of this character", options, cancel, lambda progress: self.progress(job_id, progress))
+                        images = await self.generate_image({**profile, "name": validated.name}, "Portrait of this character", options, cancel, lambda progress: self.progress(job_id, progress))
                     finally:
                         self.active_gpu_kind = "chat"
                     if images and not cancel.is_set():
@@ -634,6 +685,12 @@ class Runtime:
                 char = db.get(Character, convo.character_id) if convo else None
                 profile = self.flattened(db, char, public=char.user_id != user_id) if char else {}
                 char_id, convo_id = char.id if char else None, convo.id if convo else None
+                scene = None
+                if kind == "image":
+                    profile["content_mode"] = "adult" if adult_mode(db, user_id, profile) else "standard"
+                    if convo:
+                        recent = db.scalars(select(Message).where(Message.conversation_id == convo.id, Message.content != "").order_by(Message.created_at.desc()).limit(12)).all()[::-1]
+                        scene = {"summary": convo.summary, "messages": [{"role": m.role, "content": m.content[:600]} for m in recent]}
                 voice = payload.get("voice")
                 if kind == "speech" and voice.startswith("xtts:ref:"):
                     reference = db.get(Asset, voice[len("xtts:ref:"):])
@@ -652,7 +709,7 @@ class Runtime:
                                 return {"assets": [asset_json(a) for a in assets], "cache_key": cache_key, "cached": True}
             if kind == "image":
                 self.image_gate()
-                paths = await self.providers.generate_image(profile, payload["prompt"], payload["options"], cancel, lambda progress: self.progress(job_id, progress))
+                paths = await self.generate_image(profile, payload["prompt"], payload["options"], cancel, lambda progress: self.progress(job_id, progress), scene=scene)
             else:
                 paths = [await self.providers.synthesize(payload["text"], voice, payload["language"], payload["speed"], cancel)]
             if cancel.is_set():

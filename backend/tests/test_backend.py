@@ -1,4 +1,5 @@
 import io
+import re
 import time
 
 import pytest
@@ -31,6 +32,18 @@ def test_pkce_wrong_redirect_and_csrf_are_rejected(service):
     client, _, _ = service
     assert client.get("/auth/authorize", params={"client_id": "chatabae", "redirect_uri": "https://attacker.example/", "code_challenge": "a" * 43, "code_challenge_method": "S256", "state": "b" * 32}).status_code == 400
     assert client.post("/auth/register", data={"username": "alice", "password": "a" * 20, "flow": "bad", "csrf": "bad"}).status_code == 403
+
+
+def test_auth_forms_let_browsers_send_their_origin(service):
+    client, _, _ = service
+    query = {"client_id": "chatabae", "redirect_uri": "http://localhost:5173/", "code_challenge": "a" * 43, "code_challenge_method": "S256", "state": "safe_state_1234567890"}
+    form = client.get("/auth/authorize", params=query)
+    flow = re.search(r'name="flow" value="([^"]+)"', form.text).group(1)
+    # Browsers send `Origin: null` on form POSTs from no-referrer pages, which the origin check must reject.
+    assert form.headers["Referrer-Policy"] == "same-origin"
+    assert client.get("/auth/recover", params={"flow": flow}).headers["Referrer-Policy"] == "same-origin"
+    assert client.get("/api/v1/status").headers["Referrer-Policy"] == "no-referrer"
+    assert client.post("/auth/login", headers={"Origin": "null"}, data={"username": "alice", "password": "a" * 20, "flow": flow, "csrf": "x"}).status_code == 403
 
 
 def test_ownership_stream_replay_memory_edit_search(service):
@@ -104,6 +117,60 @@ def test_public_image_license_and_xtts_gate(service):
     image = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait"}).json()
     result = wait_job(client, headers, image["id"])
     assert result["status"] == "completed" and result["output"]["assets"][0]["kind"] == "image"
+
+
+def test_public_images_are_moderated_before_and_after_generation(service):
+    client, app, provider = service
+    settings = app.state.runtime.settings
+    settings.mode, settings.public_image_allowed = "online", True
+
+    def image(username, prompt):
+        # The per-account image gap allows one request per five minutes, so each case uses its own account.
+        headers, _, _ = register(client, username)
+        _, convo = character_conversation(client, headers)
+        job = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": prompt}).json()
+        return headers, wait_job(client, headers, job["id"])
+
+    _, allowed = image("alice", "Portrait")
+    assert allowed["status"] == "completed" and provider.image_moderation == [("Scene: Portrait", False), ("Scene: Portrait", True)]
+    generated = provider.started.count("image")
+    _, blocked = image("bob", "forbidden scene")
+    assert blocked["status"] == "failed" and "blocked by moderation" in blocked["error"]
+    assert provider.started.count("image") == generated
+    provider.hold_image_result = True
+    carol, held = image("carol", "Cafe")
+    assert held["status"] == "failed" and "blocked by moderation" in held["error"]
+    assert not (provider.root / "test-provider-image.png").exists()
+    assert [a for a in client.get("/api/v1/assets", headers=carol).json() if a["kind"] == "image"] == []
+
+
+def test_adult_mode_needs_confirmation_and_an_adult_character(service):
+    client, _, provider = service
+    headers, _, _ = register(client)
+    assert client.get("/api/v1/me", headers=headers).json()["adult_content"] is False
+    assert client.put("/api/v1/me/adult-content", headers=headers, json={"enabled": True}).status_code == 422
+    _, adult_convo = character_conversation(client, headers)
+    _, young_convo = character_conversation(client, headers, profile={"age": 16, "fictional": True})
+
+    def system_prompt(convo):
+        job = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "Hi"}).json()["job"]
+        assert wait_job(client, headers, job["id"])["status"] == "completed"
+        return provider.received_chat[-1][0]["content"]
+
+    assert "consenting adults" not in system_prompt(adult_convo)
+    enabled = client.put("/api/v1/me/adult-content", headers=headers, json={"enabled": True, "confirm_adult": True})
+    assert enabled.status_code == 200 and enabled.json()["adult_content"] is True
+    assert client.get("/api/v1/me", headers=headers).json()["adult_content"] is True
+    assert "consenting adults" in system_prompt(adult_convo)
+    # A confirmed account never unlocks adult content for a character under 18.
+    assert "consenting adults" not in system_prompt(young_convo)
+    image = client.post(f"/api/v1/conversations/{adult_convo['id']}/images", headers=headers, json={"prompt": "Show me where you are"}).json()
+    assert wait_job(client, headers, image["id"])["status"] == "completed"
+    composed = provider.composed[-1]
+    assert composed["profile"]["content_mode"] == "adult" and composed["request"] == "Show me where you are"
+    assert any(message["content"] == "Hi" for message in composed["scene"]["messages"])
+    assert client.put("/api/v1/me/adult-content", headers=headers, json={"enabled": False}).json()["adult_content"] is False
+    assert "consenting adults" not in system_prompt(adult_convo)
 
 
 def test_report_deduplication_and_admin_is_not_public(service):

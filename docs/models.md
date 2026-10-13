@@ -16,7 +16,7 @@ Nach dem Beenden eigener GPU-Prozesse liest Chatabae die tatsächliche NVIDIA-Sp
 
 **Mit Referenzporträt bestimmt das erste Referenzbild das Seitenverhältnis und die Bildaufteilung.** Es wird auf etwa ein Megapixel skaliert. Die Breiten- und Höhenoptionen gelten bei diesem Referenz-/Editpfad nicht; sie gelten für Bilder ohne Referenz. Der vom Qwen-Encoder erzeugte Latent bleibt an die erste Referenz angepasst, damit die Bearbeitung nicht gegenüber dem Ausgangsbild verschoben wird. Identitätserhalt ist ein Modellziel und keine Garantie.
 
-Die öffentliche Qwen-Bildfunktion bleibt ohne dokumentierte Nutzungserlaubnis gesperrt. Der vorhandene Adapter kann für private Evaluation verwendet werden. Kostenloser öffentlicher Betrieb ist nicht pauschal von der auf Forschung/Evaluation beschränkten Lizenz abgedeckt. [Qwen Research License](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE).
+Kostenloser öffentlicher Betrieb ist nicht pauschal von der auf Forschung/Evaluation beschränkten Lizenz abgedeckt. Am 13.10.2026 hat der Betreiber die öffentliche Qwen-Bildfunktion ausdrücklich für alle Konten der kostenlosen, nichtkommerziellen Hobbywebsite freigegeben und trägt das Lizenzrisiko selbst; eine schriftliche Genehmigung von Alibaba/Qwen liegt nicht vor. Die Freigabe steht nur in der privaten Konfiguration (`public_image_allowed` mit `public_image_license_evidence`). Öffentliche Bildaufträge werden vor der Generierung (Prompt und Charakter) und danach (fertiges Bild per CPU-Vision) fail-closed moderiert; zurückgehaltene Ergebnisse werden gelöscht und nicht gespeichert. [Qwen Research License](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE).
 
 ## Sprache
 

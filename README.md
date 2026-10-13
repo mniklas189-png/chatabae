@@ -26,7 +26,7 @@ Die öffentliche Bibliothek enthält nur freigegebene Profil-Snapshots. Private 
 - Qwen3.5-9B Q4_K_M mit gepinntem llama.cpp-CUDA-Server für Chat und lokale Moderation.
 - Vorhandene Qwen-Image-2.1-Dateien und ComfyUI werden wiederverwendet; Originalprojekt und Originalausgaben werden nicht verändert.
 - Kokoro auf CPU für Englisch, Piper auf CPU für Deutsch, XTTS v2 für hochwertige Stimmen.
-- Öffentliche Qwen-Image-Jobs sind standardmäßig serverseitig gesperrt. Nur tatsächliche lokale Evaluation ist vorgesehen, bis die öffentliche Nutzung dokumentiert erlaubt ist. `public_image_allowed` verlangt zusätzlich `public_image_license_evidence` in der privaten Konfiguration.
+- Öffentliche Qwen-Image-Jobs sind standardmäßig serverseitig gesperrt. `public_image_allowed` verlangt zusätzlich `public_image_license_evidence` in der privaten Konfiguration; die Lizenz (Forschung/Evaluation) ist vor einer Freigabe selbst zu bewerten. Freigegebene öffentliche Bildaufträge werden vor und nach der Generierung fail-closed moderiert.
 - XTTS v2 ist nur für die vereinbarte nichtkommerzielle Nutzung vorgesehen; seine Lizenz liegt neben den explizit heruntergeladenen Gewichten.
 
 Downloadrevisionen, Dateigrößen und SHA-256-Prüfsummen stehen in `scripts/models/manage.py` und `scripts/bootstrap_runtime.py`. Bildergewichte werden nicht dupliziert. Anfängliche Quoten und die GPU-Warteschlange sind konfigurierbar; konkrete Besucherzahlen werden erst nach Messungen angegeben.

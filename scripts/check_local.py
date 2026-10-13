@@ -60,6 +60,7 @@ def main():
     parser.add_argument("--api", default="http://127.0.0.1:7810")
     parser.add_argument("--frontend", default="http://127.0.0.1:5173/")
     parser.add_argument("--allow-online", action="store_true", help="Explicitly test your configured HTTPS Funnel API with a disposable QA account")
+    parser.add_argument("--image", action="store_true", help="Also generate one real fast image (several minutes of GPU time)")
     args = parser.parse_args()
     if urlsplit(args.api).hostname not in {"127.0.0.1", "localhost"}:
         from pathlib import Path
@@ -79,9 +80,12 @@ def main():
         challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).decode().rstrip("=")
         state = secrets.token_urlsafe(24)
         query = {"client_id": "chatabae", "redirect_uri": args.frontend, "code_challenge": challenge, "code_challenge_method": "S256", "state": state, "mode": "register"}
-        form = require(client.get("/auth/authorize", params=query)).text
+        form_response = require(client.get("/auth/authorize", params=query))
+        form = form_response.text
+        # Browsers send `Origin: null` when posting a form from a no-referrer page; mimic that instead of a forged origin.
+        form_origin = "null" if form_response.headers.get("referrer-policy", "").strip() == "no-referrer" else args.api.rstrip("/")
         account = "qa_" + secrets.token_hex(4)
-        response = require(client.post("/auth/register", data={"username": account, "password": secrets.token_urlsafe(32), "flow": field(form, "flow"), "csrf": field(form, "csrf")}, headers={"Origin": args.api}))
+        response = require(client.post("/auth/register", data={"username": account, "password": secrets.token_urlsafe(32), "flow": field(form, "flow"), "csrf": field(form, "csrf")}, headers={"Origin": form_origin}))
         saved = re.search(r'id="continue" href="([^"]+)"', response.text)
         if not saved:
             raise RuntimeError("Registration did not display recovery codes")
@@ -130,6 +134,16 @@ def main():
             if not repeated_result.get("cached") or repeated_result["assets"][0]["id"] != speech_result["assets"][0]["id"]:
                 raise RuntimeError("Identical speech did not reuse the private audio cache")
             reports["speech_cache"] = True
+            if args.image:
+                image_job = require(client.post(f"/api/v1/conversations/{conversation['id']}/images", json={"prompt": "Eine freundliche Astronomin mit Teleskop unter dem Sternenhimmel", "options": {"preset": "fast", "width": 512, "height": 512}}), 202).json()
+                image_result, timing = wait_job(client, image_job["id"], timeout=900)
+                stored = image_result.get("assets") or []
+                if not stored or stored[0].get("kind") != "image":
+                    raise RuntimeError("Image job did not store an image asset")
+                picture = require(client.get(stored[0]["url"]))
+                if not picture.content.startswith((b"\x89PNG", b"\xff\xd8", b"RIFF")):
+                    raise RuntimeError("Stored image has an unexpected format")
+                reports["image"] = {**timing, "image_bytes": len(picture.content)}
             require(client.get("/api/v1/me/export"))
             reports["persistence"] = True
             reports["pkce_cookie_only"] = True

@@ -15,7 +15,7 @@ Die lokalen Modelle und Laufzeiten bleiben eigenständige Bestandteile mit eigen
 | eSpeak NG im vorhandenen Piper-Paket | eSpeak NG contributors | [GPL-3.0](https://github.com/espeak-ng/espeak-ng/blob/master/COPYING). |
 | XTTS-v2-Gewichte und generierte Audiodateien | Coqui | [Coqui Public Model License 1.0.0](https://huggingface.co/coqui/XTTS-v2/blob/6c2b0d75eae4b7047358e3b6bd9325f857d43f77/LICENSE.txt). |
 | Coqui-TTS-Programmcode 0.27.5 | Coqui / Idiap / contributors | [MPL-2.0](https://github.com/idiap/coqui-ai-TTS/blob/v0.27.5/LICENSE.txt). |
-| Qwen Image 2.1, vorhandenes Comfy-Org-Paket | Alibaba Cloud / Qwen / Comfy-Org | [Qwen Research License](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE); öffentliche Bildfunktion gesperrt. |
+| Qwen Image 2.1, vorhandenes Comfy-Org-Paket | Alibaba Cloud / Qwen / Comfy-Org | [Qwen Research License](https://huggingface.co/Qwen/Qwen-Image-2.1/blob/main/LICENSE); öffentliche Bildfunktion auf Betreiberentscheidung freigegeben, Lizenzrisiko beim Betreiber. |
 
 Apache-/MIT-Lizenztexte, Copyrights und etwaige NOTICE-Dateien müssen bei einer Weiterverteilung entsprechend ihren Bedingungen erhalten bleiben. Diese Quellenliste allein ist kein vollständiges Lizenzpaket für die Weiterverteilung sämtlicher externer Binärdateien. Vorhandene LocalImageAI- und Piper-Installationen werden referenziert und nicht in diesem Quellrepository gebündelt.
 

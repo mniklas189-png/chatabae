@@ -63,7 +63,7 @@ def current_user(request: Request) -> User:
 
 
 def user_json(user: User):
-    return {"id": user.id, "username": user.username}
+    return {"id": user.id, "username": user.username, "adult_content": user.adult_confirmed_at is not None}
 
 
 def reserve_quota(db, key: str, limit: int, window: int):
@@ -165,6 +165,8 @@ def make_auth_router():
         response = HTMLResponse(body)
         response.set_cookie("chatabae_csrf", csrf, max_age=600, httponly=True, secure=runtime(request).settings.secure_cookies, samesite="strict", path="/auth")
         response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+        # "no-referrer" would make browsers send `Origin: null` on the form POST, which the origin check rejects.
+        response.headers["Referrer-Policy"] = "same-origin"
         response.headers["Cache-Control"] = "no-store"
         return response
 
@@ -187,6 +189,8 @@ def make_auth_router():
         response.set_cookie("chatabae_csrf", csrf, max_age=600, httponly=True, secure=runtime(request).settings.secure_cookies, samesite="strict", path="/auth")
         response.headers["Cache-Control"] = "no-store"
         response.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+        # "no-referrer" would make browsers send `Origin: null` on the form POST, which the origin check rejects.
+        response.headers["Referrer-Policy"] = "same-origin"
         return response
 
     @router.post("/auth/recover")

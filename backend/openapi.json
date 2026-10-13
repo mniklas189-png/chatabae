@@ -1,6 +1,25 @@
 {
   "components": {
     "schemas": {
+      "AdultContent": {
+        "additionalProperties": false,
+        "properties": {
+          "confirm_adult": {
+            "default": false,
+            "title": "Confirm Adult",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ],
+        "title": "AdultContent",
+        "type": "object"
+      },
       "AssetResponse": {
         "properties": {
           "character_id": {
@@ -1217,6 +1236,11 @@
       },
       "UserResponse": {
         "properties": {
+          "adult_content": {
+            "default": false,
+            "title": "Adult Content",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -2901,6 +2925,44 @@
           }
         },
         "summary": "Update Me"
+      }
+    },
+    "/api/v1/me/adult-content": {
+      "put": {
+        "operationId": "adult_content_api_v1_me_adult_content_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AdultContent"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Adult Content"
       }
     },
     "/api/v1/me/export": {

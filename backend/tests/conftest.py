@@ -27,6 +27,9 @@ class FakeProviders:
         self.speech_calls = []
         self.received_images = []
         self.image_options = []
+        self.image_moderation = []
+        self.composed = []
+        self.hold_image_result = False
         self.speech_version = "test-model-v1"
         self.received_generations = []
         self.capabilities = {kind: {"available": True, "ready": False} for kind in ("chat", "profile", "moderation", "image", "tts", "kokoro", "piper", "xtts")}
@@ -56,6 +59,15 @@ class FakeProviders:
         if self.hold_moderation:
             raise RuntimeError("Classifier unavailable")
         return {"decision": "hold" if "forbidden" in profile.get("description", "") else "allow", "reason": "Local test policy"}
+
+    async def compose_image_prompt(self, profile, scene, request):
+        self.composed.append({"profile": dict(profile), "scene": scene, "request": request})
+        return "Scene: " + request
+
+    async def moderate_image(self, profile, prompt, image_path=None):
+        self.image_moderation.append((prompt, image_path is not None))
+        held = "forbidden" in prompt or (image_path is not None and self.hold_image_result)
+        return {"decision": "hold" if held else "allow", "reason": "Local test policy"}
 
     async def generate_image(self, profile, prompt, options, cancel_event, progress_callback):
         self.started.append("image")

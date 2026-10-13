@@ -250,6 +250,47 @@ describe('character space', () => {
     expect(screen.getByText('123')).toBeTruthy();
     expect(screen.getByText('Fast · 15 steps · 512 × 512')).toBeTruthy();
   });
+  it('fills the image prompt from a suggestion about the character in the current moment', async () => {
+    let requested: { prompt?: string } = {};
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/images')) { requested = JSON.parse(String(init?.body)); return body(job('idea-job', 'image'), 202); }
+      if (url.includes('/jobs/idea-job/events')) return completed({ assets: [] });
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create image' }));
+    const dialog = await screen.findByRole('dialog');
+    const ideas = within(dialog).getByRole('group', { name: 'Image ideas' });
+    fireEvent.click(within(ideas).getByRole('button', { name: 'What do you look like?' }));
+    expect((within(dialog).getByRole('textbox', { name: 'Describe the image you’d like to create' }) as HTMLTextAreaElement).value).toBe('Show me what you look like right now');
+    fireEvent.click(within(ideas).getByRole('button', { name: 'Where are you?' }));
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create image' }));
+    await waitFor(() => expect(requested.prompt).toBe('Show me where you are right now'));
+  });
+  it('enables adult content only after an explicit 18+ confirmation', async () => {
+    const sent: unknown[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/me/adult-content')) { const value = JSON.parse(String(init?.body)); sent.push(value); return body({ ...token.user, adult_content: value.enabled }); }
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/settings']}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    const toggle = screen.getByRole('switch', { name: 'Adult content (18+)' });
+    expect(toggle.getAttribute('aria-checked')).toBe('false');
+    fireEvent.click(toggle);
+    const dialog = await screen.findByRole('dialog');
+    const enable = within(dialog).getByRole('button', { name: 'Enable adult content' }) as HTMLButtonElement;
+    expect(enable.disabled).toBe(true);
+    expect(sent).toEqual([]);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'I confirm that I am at least 18 years old.' }));
+    fireEvent.click(enable);
+    await waitFor(() => expect(sent).toEqual([{ enabled: true, confirm_adult: true }]));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Adult content (18+)' }).getAttribute('aria-checked')).toBe('true'));
+    fireEvent.click(screen.getByRole('switch', { name: 'Adult content (18+)' }));
+    await waitFor(() => expect(sent).toEqual([{ enabled: true, confirm_adult: true }, { enabled: false, confirm_adult: false }]));
+    await waitFor(() => expect(screen.getByRole('switch', { name: 'Adult content (18+)' }).getAttribute('aria-checked')).toBe('false'));
+  });
   it('locks image format to the stable character reference portrait', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/content') ? new Response(new Blob(['portrait'], { type: 'image/png' })) : signedInResponse(url, [{ ...character, avatar_asset_id: 'canonical-avatar' }])));
     render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);

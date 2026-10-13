@@ -544,6 +544,23 @@ export interface paths {
         patch: operations["update_me_api_v1_me_patch"];
         trace?: never;
     };
+    "/api/v1/me/adult-content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Adult Content */
+        put: operations["adult_content_api_v1_me_adult_content_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/export": {
         parameters: {
             query?: never;
@@ -826,6 +843,16 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdultContent */
+        AdultContent: {
+            /**
+             * Confirm Adult
+             * @default false
+             */
+            confirm_adult: boolean;
+            /** Enabled */
+            enabled: boolean;
+        };
         /** AssetResponse */
         AssetResponse: {
             /** Character Id */
@@ -1297,6 +1324,11 @@ export interface components {
         };
         /** UserResponse */
         UserResponse: {
+            /**
+             * Adult Content
+             * @default false
+             */
+            adult_content: boolean;
             /** Id */
             id: string;
             /** Username */
@@ -2622,6 +2654,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    adult_content_api_v1_me_adult_content_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AdultContent"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UserResponse"];
                 };
             };
             /** @description Validation Error */

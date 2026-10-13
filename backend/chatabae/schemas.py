@@ -150,6 +150,12 @@ class RefreshRequest(Strict):
 class UserResponse(BaseModel):
     id: str
     username: str
+    adult_content: bool = False
+
+
+class AdultContent(Strict):
+    enabled: bool
+    confirm_adult: bool = False
 
 
 class TokenResponse(BaseModel):

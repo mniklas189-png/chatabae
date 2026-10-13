@@ -15,14 +15,14 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Streamin
 from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 
-from .auth import current_user, make_auth_router, reserve_quota
+from .auth import current_user, make_auth_router, reserve_quota, user_json
 from .body_limit import BodyLimitMiddleware
 from .config import Settings, load_settings
 from .db import Asset, AuthSession, Character, Conversation, Favorite, Job, JobEvent, Memory, Message, Report, User
 from .jobs import Runtime, TERMINAL, UnavailableProviders, XTTS_LICENSE, asset_json, character_json, job_json, message_json, public_snapshot, timestamp
 from .intent import explicit_image_request
 from .media import adopt, asset_path, storage_check
-from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse
+from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
 
 
 def owned(db, model, identifier, user):
@@ -94,7 +94,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                 return JSONResponse({"detail": exc.detail}, exc.status_code, headers=exc.headers)
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
-        response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
         response.headers["X-Frame-Options"] = "DENY"
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
@@ -156,7 +156,17 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
 
     @app.get("/api/v1/me")
     async def me(user: User = Depends(current_user)):
-        return {"id": user.id, "username": user.username, "preferences": user.preferences, "created_at": timestamp(user.created_at)}
+        return {"id": user.id, "username": user.username, "adult_content": user.adult_confirmed_at is not None, "preferences": user.preferences, "created_at": timestamp(user.created_at)}
+
+    @app.put("/api/v1/me/adult-content", response_model=UserResponse)
+    async def adult_content(body: AdultContent, user: User = Depends(current_user)):
+        if body.enabled and not body.confirm_adult:
+            raise HTTPException(422, "Confirm that you are at least 18 years old")
+        with rt.db.sessions() as db:
+            live = db.get(User, user.id)
+            live.adult_confirmed_at = time.time() if body.enabled else None
+            db.commit()
+            return user_json(live)
 
     @app.patch("/api/v1/me")
     async def update_me(body: dict, user: User = Depends(current_user)):
@@ -201,7 +211,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
     @app.get("/api/v1/me/export")
     async def export_me(user: User = Depends(current_user)):
         with rt.db.sessions() as db:
-            return {"user": {"id": user.id, "username": user.username, "preferences": user.preferences}, "characters": [character_json(c) for c in db.scalars(select(Character).where(Character.user_id == user.id)).all()], "conversations": [conversation_json(c) for c in db.scalars(select(Conversation).where(Conversation.user_id == user.id)).all()], "messages": [message_json(db, m) for m in db.scalars(select(Message).where(Message.user_id == user.id)).all()], "memories": [memory_json(m) for m in db.scalars(select(Memory).where(Memory.user_id == user.id)).all()], "assets": [asset_json(a) for a in db.scalars(select(Asset).where(Asset.user_id == user.id)).all()]}
+            return {"user": {"id": user.id, "username": user.username, "preferences": user.preferences, "adult_confirmed_at": timestamp(user.adult_confirmed_at)}, "characters": [character_json(c) for c in db.scalars(select(Character).where(Character.user_id == user.id)).all()], "conversations": [conversation_json(c) for c in db.scalars(select(Conversation).where(Conversation.user_id == user.id)).all()], "messages": [message_json(db, m) for m in db.scalars(select(Message).where(Message.user_id == user.id)).all()], "memories": [memory_json(m) for m in db.scalars(select(Memory).where(Memory.user_id == user.id)).all()], "assets": [asset_json(a) for a in db.scalars(select(Asset).where(Asset.user_id == user.id)).all()]}
 
     @app.get("/api/v1/characters", response_model=list[CharacterResponse])
     async def list_characters(user: User = Depends(current_user)):

@@ -27,6 +27,8 @@ class User(Base):
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     banned: Mapped[bool] = mapped_column(Boolean, default=False)
     preferences: Mapped[dict] = mapped_column(JSON, default=dict)
+    # Set when the account holder confirmed being 18+ and enabled adult content; None means standard filters.
+    adult_confirmed_at: Mapped[float | None] = mapped_column(Float, nullable=True)
 
 
 class AuthSession(Base):
