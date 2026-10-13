@@ -26,6 +26,8 @@ Ziel: kostenlose öffentliche Character-AI-Website auf GitHub Pages. Alle KI und
 
 **Rollenspiel-Aktionen und natürlicherer Stil (13.10.2026):** Charaktere schreiben Handlungen zwischen Sternchen (`*lehnt sich an den Tisch*`) und Gesagtes als Klartext, kurz, direkt und ohne erzwungene Metaphern oder ständige Themenbezüge; real mit dem Chatmodell geprüft. Die Website zeigt `*…*` (Nutzer und Charaktere) kursiv als Erzählung ohne Sternchen; Vorlesen überspringt Aktionen auch beim Streaming. Ein Modell-Vorlage-Leck (`assistant`/`<think>` im Antworttext) entstand, wenn eine später fertige Bildnachricht den Verlauf mit einer leeren Assistenznachricht enden ließ; leere Bildnachrichten werden übersprungen, der Verlauf endet immer mit einer Nutzernachricht und Markierungen werden entfernt.
 
+**Minderjährigen-Prüfung kalibriert (13.10.2026):** Ein Bild von Elena (32) wurde fälschlich als `minor_sexualized` gestoppt, vermutlich wegen Lehrer/Student-Kontext. Die Frage urteilt jetzt nur nach angegebenen Altersangaben und eindeutig kindlichen Gesichtern/Körpern; Wörter wie Student, Schule, Mädchen oder jung zählen nicht. Real geprüft: Lehrer/Student, Schulmädchen-Kostüm und explizite Erwachsene erlaubt; 13-jähriger Charakter, 14-Jähriger in der Anfrage und benannte Prominente gesperrt. Diese zwei Sperren bleiben bewusst bestehen.
+
 ## Projekt und Architektur
 
 - Arbeitsordner: `C:\Users\meyer\Desktop\!CODING\chatabae`.

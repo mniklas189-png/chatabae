@@ -25,14 +25,14 @@ import httpx
 logger = logging.getLogger(__name__)
 
 IMAGE_CATEGORIES = {
-    "minor_sexualized": "Does it show or ask for a sexual, nude or suggestive depiction of anyone who is or looks under 18 or childlike? If a nude or sexual person's age is unclear, answer true.",
+    "minor_sexualized": "Does it show or ask for sexual or nude content involving a child, or someone explicitly stated to be under 18? Judge only by stated ages and clearly childlike faces and bodies. Words like student, teacher, school, girl, boy, young, petite or small do not make anyone a minor, and a character whose stated age is 18 or older is an adult.",
     "named_real_person": "Does the image request text itself name a specific real, existing public person, such as a celebrity or politician? The character's own name never counts: characters are fictional even when they share a name with a real, mythological or historical figure.",
     "hate_or_extremism": "Does it show or ask for hateful or extremist propaganda or symbols?",
     "nudity_or_sexual": "Does it show or ask for nudity or sexual content of any kind?",
     "graphic_violence": "Does it show or ask for gore, graphic injuries or sexual violence?",
 }
 PROFILE_CATEGORIES = {
-    "minor_sexualized": "Does it sexualize anyone who is or looks under 18 or childlike?",
+    "minor_sexualized": "Does it show or ask for sexual or nude content involving a child, or someone explicitly stated to be under 18? Judge only by stated ages and clearly childlike faces and bodies. Words like student, teacher, school, girl, boy, young, petite or small do not make anyone a minor, and a character whose stated age is 18 or older is an adult.",
     "named_real_person": "Does it present a specific real, existing person, such as a celebrity, by their real name?",
     "adult_content": "Does it contain explicit sexual content, nudity or graphic violence?",
 }
