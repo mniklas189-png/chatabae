@@ -745,7 +745,7 @@ class Runtime:
                 db.commit()
             image_error = None
             # Every AI-created character also gets an AI portrait.
-            if payload["mode"] in {"assisted", "automatic"}:
+            if payload["mode"] in {"assisted", "automatic"} and payload.get("portrait", True):
                 try:
                     async with self.admission_lock:
                         with self.db.sessions() as db:

@@ -91,6 +91,8 @@ class ProfileRequest(Strict):
     mode: Literal["assisted", "automatic"] = "assisted"
     language: Literal["de", "en"] = "de"
     visibility: Literal["private", "public"] = "private"
+    # False when the creator uploads their own picture instead of an AI portrait.
+    portrait: bool = True
 
 
 class ImageOptions(Strict):

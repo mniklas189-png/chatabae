@@ -1132,6 +1132,11 @@
             "title": "Mode",
             "type": "string"
           },
+          "portrait": {
+            "default": true,
+            "title": "Portrait",
+            "type": "boolean"
+          },
           "visibility": {
             "default": "private",
             "enum": [

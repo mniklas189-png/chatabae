@@ -73,3 +73,12 @@ def test_avatar_jobs_use_their_own_quota_and_return_an_image(service):
         assert result["status"] == "completed" and result["output"]["assets"][0]["kind"] == "image"
     assert provider.received_images[-1]["appearance"] == "Short red hair, green coat"
     assert client.post("/api/v1/avatar-jobs", headers=headers, json={**draft, "age": -1}).status_code == 422
+
+
+def test_ai_character_skips_the_ai_portrait_when_the_creator_uploads_one(service):
+    client, _, provider = service
+    headers, _, _ = register(client)
+    job = client.post("/api/v1/characters/generate", headers=headers, json={"idea": "A sailor", "mode": "assisted", "language": "en", "portrait": False}).json()
+    result = wait_job(client, headers, job["id"])
+    assert result["status"] == "completed" and result["output"]["character"]["avatar_asset_id"] is None
+    assert provider.received_images == []

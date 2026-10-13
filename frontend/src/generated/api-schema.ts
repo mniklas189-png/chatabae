@@ -1336,6 +1336,11 @@ export interface components {
              */
             mode: "assisted" | "automatic";
             /**
+             * Portrait
+             * @default true
+             */
+            portrait: boolean;
+            /**
              * Visibility
              * @default private
              * @enum {string}
