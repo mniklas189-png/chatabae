@@ -137,7 +137,7 @@ def main():
             require(client.delete("/api/v1/me"))
             if client.get("/api/v1/me").status_code != 401:
                 raise RuntimeError("Deleted account retained access")
-    print(json.dumps({"real_local_api": "passed", "checks": reports, "qa_account_removed": True}, indent=2))
+    print(json.dumps({"real_api_check": "passed", "transport": "public_https" if args.allow_online else "loopback", "checks": reports, "qa_account_removed": True}, indent=2))
 
 
 if __name__ == "__main__":

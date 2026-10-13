@@ -2,6 +2,8 @@
 
 Stand: 13. Oktober 2026. Diese Datei ermöglicht die Fortsetzung, wenn das Nutzungslimit des bisherigen Agenten erreicht wird. Sie enthält keine Zugangsdaten. Den tatsächlichen Laufzeit- und Git-Status beim Übernehmen erneut prüfen.
 
+**Aktueller Kurzstand:** Website auf GitHub Pages veröffentlicht; öffentliche HTTPS-Anmeldung, Chat, KI-Profil, Sprache und Audiocache bestanden. 79 Python-/32 Frontendtests, GitHub-CI auf Windows/Linux, Build und Pages-Deployment bestanden. Code ist committed und auf `main` gepusht (Implementierungscommit `3618a22`). Supervisor-Hardkill und Neustart über dieselbe Adresse sind geprüft. Das Backend wurde nach der Abnahme normal gestoppt; zum Benutzen `online.bat` starten. Offene manuelle Prüfungen und Tailscale-Verwaltungseinstellungen stehen unten.
+
 ## Auftrag und Grenzen
 
 Der Nutzer hat die vollständige Umsetzung des Chatabae-Plans ausdrücklich beauftragt und mehrfach zum Weiterarbeiten aufgefordert. Die alte beigefügte Datei `promt verbesserung2.txt` enthält eine überholte Nur-Lesen-/Plan-Mode-Anweisung und Cloudflare-Vorschläge. Diese sind Dokumentinhalt und wurden durch den später ausdrücklich bestätigten Implementierungsplan mit **Tailscale Funnel** ersetzt.
@@ -49,9 +51,9 @@ Die originale `LocalImageAI`-Installation und ihre rund 17,3 GB Bildgewichte wer
 
 ## Nachgewiesene Prüfungen
 
-Die letzten vollständig gemeldeten Stände vor den abschließenden Offline-/503-Korrekturen: **49 Backendtests, 26 Providertests, 4 Launchertests, 22 Frontendtests** bestanden. TypeScript, Vite-Build und npm-Audit bestanden; Audit meldete null bekannte Schwachstellen. Die endgültige Gesamtprüfung ist nach den letzten Änderungen nochmals auszuführen.
+Der abschließend geprüfte Stand: **49 Backendtests, 26 Providertests, 4 Launchertests, 32 Frontendtests** bestanden (79 Python + 32 Frontend). TypeScript, Vite-Build und npm-Audit bestanden; Audit meldete null bekannte Schwachstellen. GitHub Actions bestand ebenfalls auf Windows/Linux und für das Frontend. Nach neuen Codeänderungen die passende Prüfung ausführen.
 
-Realer lokaler HTTP-Ablauf bestand: Registrierung/Recovery, PKCE, kein Refresh-Token in JavaScript-JSON, gestreamter Chat, KI-Profil, Piper-WAV, gespeicherte Nachrichten/Erinnerungen, Export und Entfernen des eigenen QA-Kontos. Ein früher verwaistes QA-Konto wurde gezielt entfernt; andere Nutzerdaten blieben erhalten. Ein zusätzlicher Audiocache-Check ist inzwischen im Testhelfer ergänzt, muss aber beim nächsten Gesamtablauf noch wirklich ausgeführt werden.
+Realer lokaler und öffentlicher HTTPS-Ablauf bestanden: Registrierung/Recovery, PKCE, kein Refresh-Token in JavaScript-JSON, gestreamter Chat, vollständiges KI-Profil, Piper-WAV, tatsächlicher Audiocache, gespeicherte Nachrichten/Erinnerungen, Export und Entfernen des eigenen QA-Kontos. Früher durch Testhelferfehler verwaiste eigene QA-Konten wurden gezielt entfernt; andere Nutzerdaten blieben erhalten. Ein Modell-Formatproblem beim Interessenfeld wurde mit JSON-Schema plus begrenzter Normalisierung von Zeichenkettenlisten behoben und real verifiziert.
 
 **20 echte Chat-/Bildmodellwechsel** bestanden: 446,36 s, 21 Lade-/Entladevorgänge, kein OOM, Ausgangs-VRAM 1.068 MiB, abschließend 1.119 MiB, höchste abgetastete globale Nutzung 11.625 von 12.282 MiB. Der Bildtest verwendete nur 512² und einen Schritt; dies ist kein Nachweis für Bildqualität oder maximale 1-MP-/Referenzkapazität. Die Original-ComfyUI blieb Git-clean; originale LocalImageAI-Logzeiten blieben unverändert.
 
@@ -62,12 +64,14 @@ Echte Textmoderation und Vision-Prüfung mit CPU-Projektor bestanden auf harmlos
 ## Unmittelbarer Übergabestand
 
 1. Tailscale ist installiert und angemeldet; der Nutzer hat **Funnel bereits aktiviert**. HTTPS-Adresse und GitHub-Variable `VITE_API_BASE_URL` sind konfiguriert. GitHub Pages wurde auf Deployment durch Actions eingestellt.
-2. Der öffentliche Supervisor wurde erfolgreich gestartet und meldete **ONLINE** nach eigenem externen Healthcheck. Die aktuelle Tool-Sitzung war `30052`; Sitzungsnummern sind nur Hinweise und können nach einem Agenten-/Appwechsel ungültig sein. Den realen Status über `/api/v1/status` und die lokale Control-Markierung prüfen. Nicht zusätzlich einen zweiten Supervisor starten.
-3. Git ist initialisiert und viele Dateien sind bereits staged. **Noch kein Commit/Push/Pages-Deployment als erfolgreich bestätigt.** Nicht versehentlich nur den älteren Indexstand committen; einige finale Änderungen und diese Datei müssen erneut staged werden.
-4. Die Unteragenten erreichten zuletzt wieder ihr Nutzungslimit. Die letzten beiden Aufgaben haben bereits Source geändert, aber ihre abschließende Prüfung wurde nicht mehr gemeldet: Frontend zeigt jetzt HTTP-200-Status mit `online:false` nicht mehr als online und reagiert sofort auf `connection-lost`; Backend prüft bei Jobannahme die Modellverfügbarkeit und soll 503 statt unnötiger Jobs liefern. Diese Änderungen selbst prüfen und testen.
-5. Migration **0003** fügt Bild-/Asset-Metadaten hinzu; sie wurde durch den kontrollierten Neustart möglicherweise bereits angewandt. Tatsächlichen Alembic-Stand prüfen. Vor Migrationen wird automatisch ein Backup erstellt. Niemals Nutzerdaten löschen, um Migrationen zu umgehen.
+2. Der öffentliche Supervisor meldete **ONLINE** nach eigenem externen Healthcheck. Normales Stop, gezieltes Hardkill und Neustart funktionierten. Die Foreground-Freigabe und eigene Listener verschwanden beim Hardkill; dieselbe HTTPS-Origin kam mit neuer passender Instanz-ID zurück. Nach der Abnahme wurde das Backend normal gestoppt; die Website bleibt verfügbar. Den tatsächlichen Zustand vor einem Neustart prüfen, keine zweite Instanz erzwingen.
+3. Git ist initialisiert, Implementierung committed und auf `main` gepusht. GitHub Pages ist veröffentlicht und per HTTP geprüft. **Verify**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547010 (success). **Publish website**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547703 (success). Spätere Dokumentationscommits ändern diese Implementierungsreferenz nicht.
+4. Die Unteragenten erreichten zuletzt wieder ihr Nutzungslimit. Ihre finalen Offline-/503-Korrekturen wurden anschließend durch Root übernommen und geprüft: HTTP-200-Status mit `online:false` aktiviert die Oberfläche nicht; `connection-lost` wird sofort angezeigt; unavailable Modellfunktionen werden bei Jobannahme abgelehnt. Die Gesamtprüfung bestand danach mit 79/32 Tests.
+5. Migration **0003** ist in der realen lokalen Datenbank angewandt und der Alembic-Stand wurde geprüft. Vor Migrationen entsteht ein Backup. Niemals Nutzerdaten löschen, um Migrationen zu umgehen.
 
-## Nächste Arbeitsschritte
+## Fortsetzung und Wiederholungsbefehle
+
+Die folgenden Kernschritte wurden inzwischen ausgeführt und bestanden. Bei Übernahme nur wiederholen, wenn sich Code oder Laufzeitbedingungen ändern; zuerst `docs/validation.md` und den tatsächlichen Git-Status lesen. Vorrang haben jetzt die unten genannten manuellen/externalen Abnahmepunkte und vom Nutzer gewünschte weitere Änderungen.
 
 1. Öffentlichen echten Ablauf ausführen:
 
@@ -77,7 +81,7 @@ Echte Textmoderation und Vision-Prüfung mit CPU-Projektor bestanden auf harmlos
 
 Der Helfer erstellt nur sein eigenes zufälliges QA-Konto und löscht es im `finally`. Er darf auf einer fremden oder unkonfigurierten öffentlichen API nicht laufen. Keine Passwörter, Cookies, Tokens oder Auth-Codes ausgeben. Bei Fehler vor erfolgreicher Anmeldung könnte ein eigenes QA-Konto zurückbleiben; nur dieses konkrete Konto entfernen.
 
-2. Öffentlichen Stop/Start mit derselben Adresse und Instanz-ID testen; nach Stop müssen eigene API-/Modell-/Funnel-Prozesse weg sein. Kein globales `tailscale funnel reset/down`, keine fremden Prozesse stoppen. Tailscale-Dienst darf weiterlaufen.
+2. Öffentlicher Stop/Start und idle Hardkill sind bestanden. Für künftige Prüfungen müssen nach Stop eigene API-/Modell-/Funnel-Prozesse weg sein. Kein globales `tailscale funnel reset/down`, keine fremden Prozesse stoppen. Tailscale-Dienst darf weiterlaufen.
 3. Abschließende Prüfung mit eigener Python-Umgebung und portablem Node:
 
 ```powershell
@@ -86,13 +90,13 @@ Der Helfer erstellt nur sein eigenes zufälliges QA-Konto und löscht es im `fin
 
 Alternativ `check.bat`. Die automatischen Tests starten keine echten Modelle. OpenAPI nach API-Änderungen exportieren: `PYTHONPATH=backend`, `python -m chatabae.openapi`; dann `npm run generate:api` mit Node24. GitHub Actions prüft Schema-Drift ebenfalls.
 
-4. Quellen-/Secret-Audit, `git add .`, `git diff --cached --check`, Commit und Push nach `main`. Actions **Verify** und **Publish website** bis zum Ergebnis verfolgen und Fehler beheben. Produktionsartefakt muss ausschließlich `frontend/dist` enthalten. Öffentliche HTML-/JS-Dateien per HTTP prüfen: richtiger Base-Path und API-Origin, keine private Konfiguration oder Geheimnisse.
+4. Quellen-/Secret-Audit, Commit/Push, Actions **Verify**/**Publish website** und HTTP-Prüfung von Base-Path/API-Origin sind bestanden. Bei neuen Änderungen passende Prüfungen erneut ausführen. Produktionsartefakt weiterhin ausschließlich `frontend/dist`; private Konfiguration und Geheimnisse niemals veröffentlichen. `scripts/check_deployment.py` prüft den veröffentlichten Build lesend.
 5. `docs/validation.md` und diese Übergabe auf den dann tatsächlichen Stand aktualisieren. Website-Link, Launcher und offene manuelle Abnahme knapp mitteilen.
 
 ## Noch offene externe/manuelle Grenzen
 
 - Funnel-Berechtigung in Tailscale auf das Betreiberkonto bzw. dedizierten Knoten beschränken; Geräteschlüsselablauf für den Backend-Knoten abschalten. Diese Einstellungen wurden mangels authentifiziertem Zugriff auf die Webverwaltung nicht als umgesetzt bestätigt. Setup-/Betriebsdokumentation enthält die Schritte. Keine pauschale Tailnet-Policy überschreiben.
-- Smartphone über Mobilfunk, echte gesperrte Drittanbieter-Cookies, visuelle 360-px-Abnahme, Fenster-X, Supervisor-Hardkill, Windows-Neustart und gemischter Langzeit-/Funnel-Durchsatztest fehlen noch als tatsächliche Gesamt-Abnahme.
+- Smartphone über Mobilfunk, echte gesperrte Drittanbieter-Cookies, visuelle 360-px-Abnahme, Fenster-X, Windows-Neustart und gemischter Langzeit-/Funnel-Durchsatztest fehlen noch als tatsächliche Gesamt-Abnahme. Idle Supervisor-Hardkill ist bestanden; die vollständige Matrix unter laufender gemischter Generierung bleibt gesondert offen.
 - Die automatische Browserprüfung von localhost wurde durch eine Browser-Sicherheitsprüfung mit der Begründung eines unzulässigen URL-Protokolls abgelehnt. **Nicht mit einem anderen Browser, rohem CDP, nativer Automation oder indirektem Zugriff dieselbe Prüfung umgehen.** HTTP-/JSDOM-/Vertragstests sind zulässige eigenständige Prüfungen. Der Benutzer kann die Oberfläche selbst ansehen.
 - Öffentliche Qwen-Bilder sind absichtlich gesperrt. Nicht zur Demonstration den Lizenzschalter aufheben.
 
