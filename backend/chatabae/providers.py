@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 
 IMAGE_CATEGORIES = {
     "minor_sexualized": "Does it show or ask for a sexual, nude or suggestive depiction of anyone who is or looks under 18 or childlike? If a nude or sexual person's age is unclear, answer true.",
-    "named_real_person": "Does the request explicitly ask for a specific real, existing person, such as a celebrity or politician, by their real name? Invented characters are not real people, even with common first names; a character marked fictional is never a real person.",
+    "named_real_person": "Does the image request text itself name a specific real, existing public person, such as a celebrity or politician? The character's own name never counts: characters are fictional even when they share a name with a real, mythological or historical figure.",
     "hate_or_extremism": "Does it show or ask for hateful or extremist propaganda or symbols?",
     "nudity_or_sexual": "Does it show or ask for nudity or sexual content of any kind?",
     "graphic_violence": "Does it show or ask for gore, graphic injuries or sexual violence?",
