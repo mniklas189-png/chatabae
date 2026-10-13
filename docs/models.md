@@ -4,7 +4,7 @@ Chatabae verwendet eigene Modellprozesse und eigene Laufzeitverzeichnisse. Die v
 
 ## Chat und Moderation
 
-Qwen3.5-9B Q4_K_M läuft über den lokalen llama.cpp-Server. Der Standardkontext beträgt 8.192 Tokens bei einem gleichzeitigen GPU-Auftrag. Vor der Anfrage zählt Chatabae den tatsächlichen Modellprompt mit `/apply-template` und `/tokenize`. Ausgabetokens und ein kleiner Rahmenpuffer bleiben frei. Ältere vollständige Gesprächsrunden werden bei Bedarf ausgelassen; Systemregeln und die neueste Nachricht werden erhalten. Wenn bereits Profil, Erinnerungen und neueste Nachricht zu groß sind, schlägt die Anfrage verständlich fehl.
+Huihui-Qwen3.5-9B-abliterated Q4_K_M (Qwen3.5-9B mit entferntem Verweigerungsverhalten) läuft über den lokalen llama.cpp-Server für Chat, KI-Profile und Bildprompts. Moderationsfragen beantwortet das unveränderte Qwen3.5-9B (`moderation_model`, `moderation_mmproj`), das bei Bedarf statt des Chatmodells geladen wird. Der Standardkontext beträgt 8.192 Tokens bei einem gleichzeitigen GPU-Auftrag. Vor der Anfrage zählt Chatabae den tatsächlichen Modellprompt mit `/apply-template` und `/tokenize`. Ausgabetokens und ein kleiner Rahmenpuffer bleiben frei. Ältere vollständige Gesprächsrunden werden bei Bedarf ausgelassen; Systemregeln und die neueste Nachricht werden erhalten. Wenn bereits Profil, Erinnerungen und neueste Nachricht zu groß sind, schlägt die Anfrage verständlich fehl.
 
 Avatarprüfungen verwenden den lokalen Vision-Projektor auf der CPU. Für ein Bild werden bis zu 1.024 zusätzliche Tokens reserviert. Unsichere oder fehlgeschlagene Prüfungen halten eine Veröffentlichung zur manuellen Prüfung zurück.
 

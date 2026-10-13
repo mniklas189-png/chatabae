@@ -89,8 +89,10 @@ async def run(args) -> None:
     benchmark_dir = source.data_dir / "benchmarks" / identifier
     models = {**source.model_paths}
     models.setdefault("llama_cpp_executable", str(source.data_dir / "tools/llama/llama-server.exe"))
-    models.setdefault("chat_model", str(source.data_dir / "models/Qwen3.5-9B-Q4_K_M.gguf"))
-    models.setdefault("mmproj", str(source.data_dir / "models/mmproj-F16.gguf"))
+    models.setdefault("chat_model", str(source.data_dir / "models/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"))
+    models.setdefault("mmproj", str(source.data_dir / "models/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf"))
+    models.setdefault("moderation_model", str(source.data_dir / "models/Qwen3.5-9B-Q4_K_M.gguf"))
+    models.setdefault("moderation_mmproj", str(source.data_dir / "models/mmproj-F16.gguf"))
     settings = source.model_copy(update={"data_dir": benchmark_dir / "private-runtime", "mode": "local", "model_paths": models, "runtime": {**source.runtime, "chat_port": args.chat_port, "image_port": args.image_port}})
     manager = ProviderManager(settings)
     if not args.execute:

@@ -23,7 +23,7 @@ Die öffentliche Bibliothek enthält nur freigegebene Profil-Snapshots. Private 
 
 ## Modelle und Lizenzen
 
-- Qwen3.5-9B Q4_K_M mit gepinntem llama.cpp-CUDA-Server für Chat und lokale Moderation.
+- Huihui-Qwen3.5-9B-abliterated Q4_K_M für Chat und unverändertes Qwen3.5-9B Q4_K_M für lokale Moderation, beide über den gepinnten llama.cpp-CUDA-Server.
 - Vorhandene Qwen-Image-2.1-Dateien und ComfyUI werden wiederverwendet; Originalprojekt und Originalausgaben werden nicht verändert.
 - Kokoro auf CPU für Englisch, Piper auf CPU für Deutsch, XTTS v2 für hochwertige Stimmen.
 - Öffentliche Qwen-Image-Jobs sind standardmäßig serverseitig gesperrt. `public_image_allowed` verlangt zusätzlich `public_image_license_evidence` in der privaten Konfiguration; die Lizenz (Forschung/Evaluation) ist vor einer Freigabe selbst zu bewerten. Freigegebene öffentliche Bildaufträge werden vor und nach der Generierung fail-closed moderiert.

@@ -32,6 +32,10 @@ def owned(db, model, identifier, user):
     return record
 
 
+def shows_adult(user):
+    return bool(user and user.adult_confirmed_at is not None)
+
+
 def readable_char(db, identifier, user=None):
     char = db.get(Character, identifier)
     if not char:
@@ -40,6 +44,8 @@ def readable_char(db, identifier, user=None):
         return char, False
     owner = db.get(User, char.user_id)
     if char.visibility != "public" or not char.approved_snapshot or not owner or owner.banned:
+        raise HTTPException(404, "Character not found")
+    if char.approved_snapshot.get("adult_content") and not shows_adult(user):
         raise HTTPException(404, "Character not found")
     return char, True
 
@@ -344,12 +350,13 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             return asset_json(asset)
 
     @app.get("/api/v1/library", response_model=list[CharacterResponse])
-    async def library(q: str = "", limit: int = 50):
+    async def library(request: Request, q: str = "", limit: int = 50):
         if len(q) > 200:
             raise HTTPException(422, "Search query too long")
+        viewer = current_user(request) if request.headers.get("authorization") else None
         with rt.db.sessions() as db:
             chars = db.scalars(select(Character).join(User, User.id == Character.user_id).where(Character.visibility == "public", Character.approved_snapshot.is_not(None), User.banned == False).order_by(Character.updated_at.desc()).limit(min(max(limit, 1), 100))).all()
-            return [character_json(c, True) for c in chars if q.lower() in str(c.approved_snapshot).lower()]
+            return [character_json(c, True) for c in chars if q.lower() in str(c.approved_snapshot).lower() and (shows_adult(viewer) or not c.approved_snapshot.get("adult_content"))]
 
     @app.post("/api/v1/characters/{identifier}/favorite")
     async def favorite(identifier: str, user: User = Depends(current_user)):

@@ -4,7 +4,8 @@ Die lokalen Modelle und Laufzeiten bleiben eigenständige Bestandteile mit eigen
 
 | Bestandteil | Urheber / Projekt | Original-Lizenz oder Modellkarte |
 | --- | --- | --- |
-| Qwen3.5-9B und zugehöriger Vision-Projektor | Alibaba Cloud / Qwen; GGUF-Bereitstellung Unsloth | [Apache-2.0](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE); Copyright 2026 Alibaba Cloud. |
+| Qwen3.5-9B und zugehöriger Vision-Projektor (Moderation) | Alibaba Cloud / Qwen; GGUF-Bereitstellung Unsloth | [Apache-2.0](https://huggingface.co/Qwen/Qwen3.5-9B/blob/main/LICENSE); Copyright 2026 Alibaba Cloud. |
+| Huihui-Qwen3.5-9B-abliterated und Vision-Projektor (Chat) | huihui-ai auf Basis von Alibaba Cloud / Qwen; GGUF-Bereitstellung mradermacher | [Apache-2.0](https://huggingface.co/huihui-ai/Huihui-Qwen3.5-9B-abliterated); Copyright 2026 Alibaba Cloud. |
 | llama.cpp b11429 | The ggml authors | [MIT](https://github.com/ggml-org/llama.cpp/blob/b11429/LICENSE); Copyright 2023–2026. |
 | CUDA-12.4-Laufzeitbibliotheken | NVIDIA | [CUDA Toolkit EULA](https://docs.nvidia.com/cuda/archive/12.4.1/eula/index.html); Weiterverteilung nur im Rahmen der jeweiligen Redistributable-Bedingungen. |
 | Kokoro-82M v1.0 und Stimmen | hexgrad / Kokoro contributors | [Apache-2.0-Modellkarte](https://huggingface.co/hexgrad/Kokoro-82M/blob/f3ff3571791e39611d31c381e3a41a3af07b4987/README.md). |

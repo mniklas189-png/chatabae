@@ -52,13 +52,15 @@ class FakeProviders:
                 raise asyncio.CancelledError()
             yield token
 
-    async def create_profile(self, idea, mode):
+    async def create_profile(self, idea, mode, adult=False):
+        self.profile_adult = adult
         return {"name": "Mira", "age": 24, "fictional": True, "description": idea, "personality": "Curious", "backstory": "An invented story", "language": "en", "voice": "kokoro:af_heart"}
 
     async def moderate_profile(self, profile, avatar_path=None):
         if self.hold_moderation:
             raise RuntimeError("Classifier unavailable")
-        return {"decision": "hold" if "forbidden" in profile.get("description", "") else "allow", "reason": "Local test policy"}
+        description = profile.get("description", "")
+        return {"decision": "hold" if "forbidden" in description else "allow", "adult": "explicit" in description, "reason": "Local test policy"}
 
     async def compose_image_prompt(self, profile, scene, request):
         self.composed.append({"profile": dict(profile), "scene": scene, "request": request})

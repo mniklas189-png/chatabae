@@ -214,18 +214,23 @@ def test_reference_graph_uses_qwen_matching_latent_and_single_batch(manager):
 
 
 @pytest.mark.asyncio
-async def test_nonsexual_minor_and_real_inspiration_are_reviewed_by_model(manager, monkeypatch):
-    calls = []
+async def test_public_profiles_only_hold_minors_and_real_people_and_mark_adult_content(manager, monkeypatch):
+    calls, answers = [], {}
     async def moderation_ready(**options):
         calls.append(options)
     async def review(messages, **options):
-        assert "Nonsexual characters of any age" in messages[0]["content"]
-        return {"decision": "allow", "reason": "Nonsexual fictional child character."}
+        assert "Invented characters are not real people" in messages[0]["content"]
+        return {"minor_sexualized": False, "named_real_person": False, "adult_content": False, "reason": "", **answers}
     monkeypatch.setattr(manager, "ensure_chat_ready", moderation_ready)
     monkeypatch.setattr(manager, "_completion_json", review)
     decision = await manager.moderate_profile({"age": 12, "fictional": True, "description": "A friendly child explorer."})
-    assert decision["decision"] == "allow" and calls == [{"cpu": True, "vision": False}]
-    assert (await manager.moderate_profile({"age": 25, "fictional": False, "description": "Harmless inspiration."}))["decision"] == "allow"
+    assert decision == {"decision": "allow", "adult": False, "reason": ""} and calls == [{"cpu": True, "vision": False, "moderation": True}]
+    answers.update(adult_content=True)
+    assert await manager.moderate_profile({"age": 25, "fictional": True}) == {"decision": "allow", "adult": True, "reason": ""}
+    # Explicit content on a character under 18 is held even if the model missed it.
+    assert (await manager.moderate_profile({"age": 15, "fictional": True}))["decision"] == "hold"
+    answers.update(adult_content=False, named_real_person=True)
+    assert (await manager.moderate_profile({"age": 40, "fictional": False}))["decision"] == "hold"
 
 
 def tokenizer_transport():
@@ -358,6 +363,11 @@ async def test_created_profile_fills_editor_fields_and_preserves_requested_minor
     assert all(isinstance(profile[field], str) for field in ("interests", "relationship", "instructions"))
     result["interests"] = ["Sterne", "Wandern"]
     assert (await manager.create_profile("Eine Forscherin", "assisted"))["interests"] == "Sterne; Wandern"
+    # Lists, objects and numbers from the model become editor text instead of failing the profile.
+    result.update(interests=[{"hobby": "Sterne"}, 3], personality=["Neugierig", "mutig"], relationship={"rolle": "Freundin"}, appearance=None)
+    result["appearance"] = ["Roter Mantel"]
+    mixed = await manager.create_profile("Eine Forscherin", "assisted")
+    assert mixed["interests"] == "hobby: Sterne; 3" and mixed["personality"] == "Neugierig; mutig" and mixed["relationship"] == "rolle: Freundin"
 
 
 def test_speech_cache_fingerprint_changes_for_voice_and_model_replacement_without_exposing_paths(manager, tmp_path):
@@ -401,3 +411,13 @@ async def test_image_moderation_decides_from_fixed_categories(manager, monkeypat
     answers.clear()
     answers.update(clean, named_real_person="maybe")
     assert (await manager.moderate_image({"age": 30, "content_mode": "adult"}, "Portrait"))["decision"] == "hold"
+
+
+def test_moderation_uses_its_own_model_and_falls_back_to_the_chat_model(manager, tmp_path):
+    chat, checker = tmp_path / "chat.gguf", tmp_path / "checker.gguf"
+    chat.write_bytes(b"chat")
+    manager._models.update(chat_model=str(chat), moderation_model=str(tmp_path / "missing.gguf"))
+    assert manager._moderation_model == chat
+    checker.write_bytes(b"checker")
+    manager._models["moderation_model"] = str(checker)
+    assert manager._moderation_model == checker and manager._chat_model == chat

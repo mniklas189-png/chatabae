@@ -18,11 +18,18 @@ ARTIFACTS = {
               "dd6df685c1024e6aa55ca55ad35038692d5e284d4dc895e7a646c3245d3d14ff", 264478423),
     "cuda": ("https://github.com/ggml-org/llama.cpp/releases/download/b11429/cudart-llama-bin-win-cuda-12.4-x64.zip",
              "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6", 391443627),
-    "chat": ("https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf",
-             "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8", 5680522464),
-    "vision": ("https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
-               "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f", 918166080),
+    "chat": ("https://huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/9f646d7eda193ddf2348134f3bff3d49eed7a2c6/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf",
+             "ea1858ef4dc4b648b8dbb44612962a0333e945060dd0545ac0f28d7c4416e4b3", 5627045248),
+    "vision": ("https://huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/9f646d7eda193ddf2348134f3bff3d49eed7a2c6/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf",
+               "56f07ff42fc9ab24fc06a93dce5a48fb2dbe08bff1a1c6e519d50af450820148", 918166016),
+    # The unmodified Qwen judges moderation questions; the abliterated chat model does not do so reliably.
+    "moderation": ("https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf",
+                   "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8", 5680522464),
+    "moderation_vision": ("https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/mmproj-F16.gguf",
+                          "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f", 918166080),
 }
+
+MODEL_ARTIFACTS = ("chat", "vision", "moderation", "moderation_vision")
 
 
 def data_directory() -> Path:
@@ -114,7 +121,7 @@ def download(name: str, directory: Path) -> Path:
     filename = url.rsplit("/", 1)[-1]
     target = directory / filename
     directory.mkdir(parents=True, exist_ok=True)
-    if name in {"chat", "vision"}:
+    if name in MODEL_ARTIFACTS:
         installed = directory.parent / "models" / filename
         if installed.is_file() and installed.stat().st_size == size and file_hash(installed) == expected:
             print(f"{name}: verified installed model (no duplicate download)", flush=True)
@@ -182,7 +189,7 @@ def main():
     parser.add_argument("--only", choices=["node", "models", "runtime", "all"], default="all")
     parser.add_argument("--data-dir", type=Path, default=data_directory())
     args = parser.parse_args()
-    names = {"node": ["node"], "models": ["chat", "vision"], "runtime": ["llama", "cuda"], "all": list(ARTIFACTS)}[args.only]
+    names = {"node": ["node"], "models": list(MODEL_ARTIFACTS), "runtime": ["llama", "cuda"], "all": list(ARTIFACTS)}[args.only]
     downloads = args.data_dir / "downloads"
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as pool:
         tasks = {pool.submit(download, name, downloads): name for name in names}
@@ -194,7 +201,7 @@ def main():
             extract_verified(archive, args.data_dir / "runtimes")
         elif name in ("llama", "cuda"):
             extract_verified(archive, args.data_dir / "tools" / "llama")
-        elif name in ("chat", "vision"):
+        elif name in MODEL_ARTIFACTS:
             models = args.data_dir / "models"
             models.mkdir(parents=True, exist_ok=True)
             target = models / archive.name

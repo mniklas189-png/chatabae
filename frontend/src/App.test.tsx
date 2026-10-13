@@ -352,6 +352,20 @@ describe('character space', () => {
     expect(requested).toMatchObject({ name: 'Mira', prompt: '' });
     expect(screen.getByText('ai-portrait.png')).toBeTruthy();
   });
+  it('shows saved favorites on the cards and removes one with a second click', async () => {
+    const calls: string[] = [];
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/library/favorites')) return body([character]);
+      if (url.endsWith('/favorite')) { calls.push(init?.method || 'GET'); return body({ ok: true }); }
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/library']}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    const heart = await screen.findByRole('button', { name: 'Favorite', pressed: true });
+    fireEvent.click(heart);
+    await waitFor(() => expect(calls).toEqual(['DELETE']));
+    await screen.findByRole('button', { name: 'Favorite', pressed: false });
+  });
   it('locks image format to the stable character reference portrait', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/content') ? new Response(new Blob(['portrait'], { type: 'image/png' })) : signedInResponse(url, [{ ...character, avatar_asset_id: 'canonical-avatar' }])));
     render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);

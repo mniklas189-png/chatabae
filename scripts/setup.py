@@ -34,8 +34,10 @@ def detect_paths(directory: Path) -> dict:
     return {
         "model_paths": {
             "llama_cpp_executable": str(directory / "tools/llama/llama-server.exe"),
-            "chat_model": str(directory / "models/Qwen3.5-9B-Q4_K_M.gguf"),
-            "mmproj": str(directory / "models/mmproj-F16.gguf"),
+            "chat_model": str(directory / "models/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"),
+            "mmproj": str(directory / "models/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf"),
+            "moderation_model": str(directory / "models/Qwen3.5-9B-Q4_K_M.gguf"),
+            "moderation_mmproj": str(directory / "models/mmproj-F16.gguf"),
             "kokoro_model": str(kokoro / "kokoro-v1_0.pth") if kokoro else "",
             "kokoro_voices": str(kokoro / "voices") if kokoro else "",
             "piper_executable": str(ally / "piper/piper.exe"),

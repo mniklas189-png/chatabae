@@ -14,6 +14,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 HF = "https://huggingface.co"
 QWEN = "unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5"
+HUIHUI = "mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/9f646d7eda193ddf2348134f3bff3d49eed7a2c6"
 PIPER = "rhasspy/piper-voices/resolve/c10ece1aade47bb51c153c893d14e5bf8e5b7117/de/de_DE/kerstin/low"
 XTTS = "coqui/XTTS-v2/resolve/6c2b0d75eae4b7047358e3b6bd9325f857d43f77"
 KOKORO_REVISION = "f3ff3571791e39611d31c381e3a41a3af07b4987"
@@ -21,8 +22,10 @@ KOKORO = f"hexgrad/Kokoro-82M/resolve/{KOKORO_REVISION}"
 LLAMA = "https://github.com/ggml-org/llama.cpp/releases/download/b11429"
 
 ASSETS = {
-    "chat": (f"{HF}/{QWEN}/Qwen3.5-9B-Q4_K_M.gguf", "data/models/Qwen3.5-9B-Q4_K_M.gguf", 5680522464, "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"),
-    "mmproj": (f"{HF}/{QWEN}/mmproj-F16.gguf", "data/models/mmproj-F16.gguf", 918166080, "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"),
+    "chat": (f"{HF}/{HUIHUI}/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf", "data/models/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf", 5627045248, "ea1858ef4dc4b648b8dbb44612962a0333e945060dd0545ac0f28d7c4416e4b3"),
+    "mmproj": (f"{HF}/{HUIHUI}/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf", "data/models/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf", 918166016, "56f07ff42fc9ab24fc06a93dce5a48fb2dbe08bff1a1c6e519d50af450820148"),
+    "moderation_chat": (f"{HF}/{QWEN}/Qwen3.5-9B-Q4_K_M.gguf", "data/models/Qwen3.5-9B-Q4_K_M.gguf", 5680522464, "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8"),
+    "moderation_mmproj": (f"{HF}/{QWEN}/mmproj-F16.gguf", "data/models/mmproj-F16.gguf", 918166080, "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f"),
     "llama": (f"{LLAMA}/llama-b11429-bin-win-cuda-12.4-x64.zip", "tools/downloads/llama-b11429-cuda12.4.zip", 264478423, "dd6df685c1024e6aa55ca55ad35038692d5e284d4dc895e7a646c3245d3d14ff"),
     "llama_cuda": (f"{LLAMA}/cudart-llama-bin-win-cuda-12.4-x64.zip", "tools/downloads/cudart-b11429-cuda12.4.zip", 391443627, "8c79a9b226de4b3cacfd1f83d24f962d0773be79f1e7b75c6af4ded7e32ae1d6"),
     "piper_kerstin": (f"{HF}/{PIPER}/de_DE-kerstin-low.onnx", "data/models/piper/de_DE-kerstin-low.onnx", 63104526, "d352a7641892cebf2903859af94e9ba81a141110215fe3943bcda7f7da401b7a"),

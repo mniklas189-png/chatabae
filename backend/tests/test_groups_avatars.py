@@ -82,3 +82,17 @@ def test_ai_character_skips_the_ai_portrait_when_the_creator_uploads_one(service
     result = wait_job(client, headers, job["id"])
     assert result["status"] == "completed" and result["output"]["character"]["avatar_asset_id"] is None
     assert provider.received_images == []
+
+
+def test_adult_public_characters_are_only_listed_for_confirmed_adults(service):
+    client, _, _ = service
+    alice, _, _ = register(client, "alice")
+    shared = client.post("/api/v1/characters", headers=alice, json={"name": "Vex", "description": "An explicit adult character", "profile": {"age": 30, "fictional": True}, "visibility": "public"}).json()
+    wait_job(client, alice, client.get("/api/v1/jobs", headers=alice).json()[0]["id"])
+    assert [c["id"] for c in client.get("/api/v1/library").json()] == []
+    bob, _, _ = register(client, "bob")
+    assert client.get(f"/api/v1/characters/{shared['id']}", headers=bob).status_code == 404
+    assert client.post("/api/v1/conversations", headers=bob, json={"character_id": shared["id"], "title": "x"}).status_code == 404
+    client.put("/api/v1/me/adult-content", headers=bob, json={"enabled": True, "confirm_adult": True})
+    assert [c["id"] for c in client.get("/api/v1/library", headers=bob).json()] == [shared["id"]]
+    assert client.get(f"/api/v1/characters/{shared['id']}", headers=bob).status_code == 200
