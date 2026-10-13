@@ -96,6 +96,8 @@ class Conversation(Base):
     summary: Mapped[str] = mapped_column(Text, default="")
     parent_id: Mapped[str | None] = mapped_column(ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
     branch_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Group chats list every member in speaking order; None for a one-to-one conversation.
+    member_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     updated_at: Mapped[float] = mapped_column(Float, default=time.time)
 
@@ -109,6 +111,8 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     edited_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Speaking character of an assistant message in a group chat.
+    character_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class Memory(Base):

@@ -14,6 +14,7 @@ class Limits(BaseModel):
     chat_per_minute: int = Field(4, ge=1)
     chat_per_day: int = Field(100, ge=1)
     image_per_day: int = Field(3, ge=1)
+    avatar_per_day: int = Field(10, ge=1)
     hq_tts_per_day: int = Field(5, ge=1)
     tts_per_minute: int = Field(10, ge=1)
     profile_per_day: int = Field(10, ge=1)

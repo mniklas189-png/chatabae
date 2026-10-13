@@ -291,6 +291,67 @@ describe('character space', () => {
     await waitFor(() => expect(sent).toEqual([{ enabled: true, confirm_adult: true }, { enabled: false, confirm_adult: false }]));
     await waitFor(() => expect(screen.getByRole('switch', { name: 'Adult content (18+)' }).getAttribute('aria-checked')).toBe('false'));
   });
+  it('animates an image while it is being generated and shows the sampling progress', async () => {
+    let events: ReadableStreamDefaultController<Uint8Array> | undefined; const encoder = new TextEncoder();
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/images')) return body(job('animated-image', 'image'), 202);
+      if (url.includes('/jobs/animated-image/events')) return new Response(new ReadableStream({ start(controller) { events = controller; } }), { headers: { 'Content-Type': 'text/event-stream' } });
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    fireEvent.click(await screen.findByRole('button', { name: 'Create image' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Describe the image you’d like to create' }), { target: { value: 'A sunset walk' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Create image' }));
+    const card = await screen.findByRole('status', { name: 'Creating image…' });
+    await waitFor(() => expect(events).toBeTruthy());
+    events!.enqueue(encoder.encode('id: 1\nevent: progress\ndata: {"stage":"sampling","value":0.5}\n\n'));
+    await waitFor(() => expect(within(card).getByText('Painting · 50%')).toBeTruthy());
+    events!.enqueue(encoder.encode('id: 2\nevent: completed\ndata: {"output":{"assets":[]}}\n\n')); events!.close();
+    await waitFor(() => expect(screen.queryByRole('status', { name: 'Creating image…' })).toBeNull());
+  });
+  it('creates a group chat and labels each reply with its speaking character', async () => {
+    const second: Character = { ...character, id: 'character-2', name: 'Second voice' };
+    const group = { ...conversation, id: 'group-1', title: 'Our group', character_ids: [character.id, second.id] };
+    const reply: Message = { id: 'group-reply', conversation_id: group.id, role: 'assistant', content: 'Hi from the second.', assets: [], created_at: conversation.created_at, edited_at: null, character_id: second.id };
+    let requested: unknown;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/group-conversations')) { requested = JSON.parse(String(init?.body)); return body(group, 201); }
+      if (url.endsWith('/conversations')) return body([conversation, group]);
+      if (url.endsWith('/group-1/messages')) return body([reply]);
+      return signedInResponse(url, [character, second]);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations']}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    fireEvent.click(screen.getByRole('button', { name: 'New group chat' }));
+    const dialog = await screen.findByRole('dialog'); const start = within(dialog).getByRole('button', { name: 'Start group chat' }) as HTMLButtonElement;
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Schema character' }));
+    expect(start.disabled).toBe(true);
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Second voice' }));
+    fireEvent.click(start);
+    await waitFor(() => expect(requested).toEqual({ character_ids: [character.id, second.id], title: '' }));
+    expect(await screen.findByText('Hi from the second.')).toBeTruthy();
+    const article = screen.getByText('Hi from the second.').closest('article')!;
+    expect(within(article).getByText('Second voice')).toBeTruthy();
+    expect(screen.getByText('Schema character, Second voice')).toBeTruthy();
+  });
+  it('generates an AI profile picture in the editor and previews it before saving', async () => {
+    let requested: Record<string, unknown> = {};
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/avatar-jobs')) { requested = JSON.parse(String(init?.body)); return body(job('avatar-job', 'image'), 202); }
+      if (url.includes('/jobs/avatar-job/events')) return completed({ assets: [{ id: 'portrait', kind: 'image' }] });
+      if (url.endsWith('/assets/portrait/content')) return new Response(new Blob(['png'], { type: 'image/png' }));
+      return signedInResponse(url);
+    }));
+    render(<MemoryRouter initialEntries={['/editor']}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: /alice/ });
+    fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Mira' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Generate with AI' }));
+    expect(await screen.findByRole('img', { name: 'Profile picture preview' })).toBeTruthy();
+    expect(requested).toMatchObject({ name: 'Mira', prompt: '' });
+    expect(screen.getByText('ai-portrait.png')).toBeTruthy();
+  });
   it('locks image format to the stable character reference portrait', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/content') ? new Response(new Blob(['portrait'], { type: 'image/png' })) : signedInResponse(url, [{ ...character, avatar_asset_id: 'canonical-avatar' }])));
     render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);

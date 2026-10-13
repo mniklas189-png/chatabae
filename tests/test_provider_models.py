@@ -377,3 +377,27 @@ def test_speech_cache_fingerprint_changes_for_voice_and_model_replacement_withou
 def test_image_graph_rejects_over_one_megapixel_without_reference(manager):
     with pytest.raises(ProviderError, match="pixel budget"):
         manager._image_graph("portrait", {"width": 1536, "height": 1024}, [], "owned")
+
+
+@pytest.mark.asyncio
+async def test_image_moderation_decides_from_fixed_categories(manager, monkeypatch):
+    answers = {}
+    async def ready(**options):
+        pass
+    async def review(messages, **options):
+        assert "Gender, style or other differences" in messages[0]["content"] and options["json_schema"]["required"][-1] == "reason"
+        return dict(answers)
+    monkeypatch.setattr(manager, "ensure_chat_ready", ready)
+    monkeypatch.setattr(manager, "_completion_json", review)
+    clean = {"minor_sexualized": False, "named_real_person": False, "hate_or_extremism": False, "nudity_or_sexual": False, "graphic_violence": False, "reason": "A portrait"}
+    answers.update(clean)
+    assert (await manager.moderate_image({"age": 30}, "Portrait"))["decision"] == "allow"
+    answers.update(nudity_or_sexual=True)
+    assert (await manager.moderate_image({"age": 30}, "Portrait"))["decision"] == "hold"
+    assert (await manager.moderate_image({"age": 30, "content_mode": "adult"}, "Portrait"))["decision"] == "allow"
+    answers.update(minor_sexualized=True)
+    held = await manager.moderate_image({"age": 30, "content_mode": "adult"}, "Portrait")
+    assert held["decision"] == "hold" and held["reason"].startswith("minor_sexualized")
+    answers.clear()
+    answers.update(clean, named_real_person="maybe")
+    assert (await manager.moderate_image({"age": 30, "content_mode": "adult"}, "Portrait"))["decision"] == "hold"

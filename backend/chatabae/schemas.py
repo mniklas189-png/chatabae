@@ -158,6 +158,20 @@ class AdultContent(Strict):
     confirm_adult: bool = False
 
 
+class GroupConversationCreate(Strict):
+    character_ids: list[str] = Field(min_length=2, max_length=4)
+    title: str = Field("", max_length=120)
+
+
+class AvatarRequest(Strict):
+    name: str = Field("", max_length=80)
+    description: str = Field("", max_length=1000)
+    age: int | None = Field(None, ge=0, le=10000)
+    gender: str = Field("", max_length=100)
+    appearance: str = Field("", max_length=8000)
+    prompt: str = Field("", max_length=1000)
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: Literal["bearer"]
@@ -206,6 +220,7 @@ class CharacterResponse(BaseModel):
 class ConversationResponse(BaseModel):
     id: str
     character_id: str
+    character_ids: list[str]
     title: str
     parent_id: str | None = None
     branch_message_id: str | None = None
@@ -221,6 +236,7 @@ class MessageResponse(BaseModel):
     created_at: str
     edited_at: str | None = None
     assets: list[AssetResponse]
+    character_id: str | None = None
 
 
 class MemoryResponse(BaseModel):

@@ -106,6 +106,56 @@
         "title": "AssetResponse",
         "type": "object"
       },
+      "AvatarRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "age": {
+            "anyOf": [
+              {
+                "maximum": 10000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "appearance": {
+            "default": "",
+            "maxLength": 8000,
+            "title": "Appearance",
+            "type": "string"
+          },
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "gender": {
+            "default": "",
+            "maxLength": 100,
+            "title": "Gender",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          },
+          "prompt": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Prompt",
+            "type": "string"
+          }
+        },
+        "title": "AvatarRequest",
+        "type": "object"
+      },
       "Body_avatar_api_v1_characters__identifier__avatar_post": {
         "properties": {
           "file": {
@@ -578,6 +628,13 @@
             "title": "Character Id",
             "type": "string"
           },
+          "character_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Character Ids",
+            "type": "array"
+          },
           "created_at": {
             "title": "Created At",
             "type": "string"
@@ -609,6 +666,7 @@
         "required": [
           "id",
           "character_id",
+          "character_ids",
           "title",
           "created_at",
           "updated_at"
@@ -642,6 +700,31 @@
           }
         },
         "title": "Generation",
+        "type": "object"
+      },
+      "GroupConversationCreate": {
+        "additionalProperties": false,
+        "properties": {
+          "character_ids": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 4,
+            "minItems": 2,
+            "title": "Character Ids",
+            "type": "array"
+          },
+          "title": {
+            "default": "",
+            "maxLength": 120,
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "character_ids"
+        ],
+        "title": "GroupConversationCreate",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -929,6 +1012,17 @@
             },
             "title": "Assets",
             "type": "array"
+          },
+          "character_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Character Id"
           },
           "content": {
             "title": "Content",
@@ -1553,6 +1647,44 @@
           }
         },
         "summary": "Refresh"
+      }
+    },
+    "/api/v1/avatar-jobs": {
+      "post": {
+        "operationId": "avatar_job_api_v1_avatar_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvatarRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Avatar Job"
       }
     },
     "/api/v1/characters": {
@@ -2636,6 +2768,44 @@
           }
         },
         "summary": "Favorite List"
+      }
+    },
+    "/api/v1/group-conversations": {
+      "post": {
+        "operationId": "add_group_conversation_api_v1_group_conversations_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroupConversationCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Add Group Conversation"
       }
     },
     "/api/v1/jobs": {

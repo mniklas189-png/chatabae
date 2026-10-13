@@ -61,6 +61,7 @@ def main():
     parser.add_argument("--frontend", default="http://127.0.0.1:5173/")
     parser.add_argument("--allow-online", action="store_true", help="Explicitly test your configured HTTPS Funnel API with a disposable QA account")
     parser.add_argument("--image", action="store_true", help="Also generate one real fast image (several minutes of GPU time)")
+    parser.add_argument("--group", action="store_true", help="Also run one real group chat turn with two characters")
     args = parser.parse_args()
     if urlsplit(args.api).hostname not in {"127.0.0.1", "localhost"}:
         from pathlib import Path
@@ -134,6 +135,15 @@ def main():
             if not repeated_result.get("cached") or repeated_result["assets"][0]["id"] != speech_result["assets"][0]["id"]:
                 raise RuntimeError("Identical speech did not reuse the private audio cache")
             reports["speech_cache"] = True
+            if args.group:
+                second = require(client.post("/api/v1/characters", json={"name": "Tom", "description": "Ein fiktiver, gut gelaunter Koch.", "profile": {"age": 35, "fictional": True, "personality": "Humorvoll"}, "language": "de", "visibility": "private"}), 201).json()
+                group = require(client.post("/api/v1/group-conversations", json={"character_ids": [character["id"], second["id"]], "title": ""}), 201).json()
+                group_turn = require(client.post(f"/api/v1/conversations/{group['id']}/messages", json={"content": "Hallo ihr beiden, stellt euch kurz vor.", "generation": {"temperature": 0.5, "max_tokens": 64, "top_p": 0.8}}), 202).json()
+                group_result, timing = wait_job(client, group_turn["job"]["id"])
+                speakers = [message.get("character_id") for message in group_result.get("messages", [])]
+                if speakers != [character["id"], second["id"]] or not all(message.get("content") for message in group_result["messages"]):
+                    raise RuntimeError("Group chat did not produce one reply per member")
+                reports["group"] = {**timing, "replies": len(speakers)}
             if args.image:
                 image_job = require(client.post(f"/api/v1/conversations/{conversation['id']}/images", json={"prompt": "Eine freundliche Astronomin mit Teleskop unter dem Sternenhimmel", "options": {"preset": "fast", "width": 512, "height": 512}}), 202).json()
                 image_result, timing = wait_job(client, image_job["id"], timeout=900)

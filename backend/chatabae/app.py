@@ -22,7 +22,7 @@ from .db import Asset, AuthSession, Character, Conversation, Favorite, Job, JobE
 from .jobs import Runtime, TERMINAL, UnavailableProviders, XTTS_LICENSE, asset_json, character_json, job_json, message_json, public_snapshot, timestamp
 from .intent import explicit_image_request
 from .media import adopt, asset_path, storage_check
-from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
+from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, AvatarRequest, GroupConversationCreate, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
 
 
 def owned(db, model, identifier, user):
@@ -45,7 +45,7 @@ def readable_char(db, identifier, user=None):
 
 
 def conversation_json(c):
-    return {"id": c.id, "character_id": c.character_id, "title": c.title, "parent_id": c.parent_id, "branch_message_id": c.branch_message_id, "created_at": timestamp(c.created_at), "updated_at": timestamp(c.updated_at)}
+    return {"id": c.id, "character_id": c.character_id, "character_ids": c.member_ids or [c.character_id], "title": c.title, "parent_id": c.parent_id, "branch_message_id": c.branch_message_id, "created_at": timestamp(c.created_at), "updated_at": timestamp(c.updated_at)}
 
 
 def memory_json(m):
@@ -175,8 +175,23 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
         preferences = await save_preferences(body["preferences"], user)
         return {"id": user.id, "username": user.username, "preferences": preferences}
 
+    def detach_from_groups(db, char, owner_only):
+        """Drop a character from group chats; a group left with one member becomes a normal chat."""
+        query = select(Conversation).where(Conversation.member_ids.is_not(None))
+        query = query.where(Conversation.user_id == char.user_id) if owner_only else query.where(Conversation.user_id != char.user_id)
+        for convo in db.scalars(query).all():
+            if char.id not in (convo.member_ids or []):
+                continue
+            remaining = [member for member in convo.member_ids if member != char.id]
+            if not remaining:
+                continue
+            convo.character_id = remaining[0]
+            convo.member_ids = remaining if len(remaining) > 1 else None
+        db.flush()
+
     def preserve_shared_conversations(db, char):
         # Removing one's profile must not erase another account's private chat history.
+        detach_from_groups(db, char, owner_only=False)
         conversations = db.scalars(select(Conversation).where(Conversation.character_id == char.id, Conversation.user_id != char.user_id)).all()
         clones = {}
         snapshot = public_snapshot(char.approved_snapshot or {"name": "Removed character", "description": "This public character was removed", "profile": {"age": 18, "fictional": True}, "language": char.language, "voice": ""})
@@ -275,6 +290,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
         with rt.db.sessions() as db:
             char = owned(db, Character, identifier, user)
             preserve_shared_conversations(db, char)
+            detach_from_groups(db, char, owner_only=True)
             paths = [a.filename for a in db.scalars(select(Asset).where(Asset.character_id == identifier)).all()]
             db.delete(char)
             db.commit()
@@ -387,6 +403,25 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             db.flush()
             db.commit()
             return conversation_json(convo)
+
+    @app.post("/api/v1/group-conversations", status_code=201, response_model=ConversationResponse)
+    async def add_group_conversation(body: GroupConversationCreate, user: User = Depends(current_user)):
+        identifiers = list(dict.fromkeys(body.character_ids))
+        if not 2 <= len(identifiers) <= 4:
+            raise HTTPException(422, "A group chat needs two to four different characters")
+        with rt.db.sessions() as db:
+            names = [character_json(*readable_char(db, identifier, user))["name"] for identifier in identifiers]
+            title = body.title.strip() or ", ".join(names)[:120]
+            convo = Conversation(user_id=user.id, character_id=identifiers[0], member_ids=identifiers, title=title)
+            db.add(convo)
+            db.commit()
+            return conversation_json(convo)
+
+    @app.post("/api/v1/avatar-jobs", status_code=202, response_model=JobResponse)
+    async def avatar_job(body: AvatarRequest, user: User = Depends(current_user)):
+        profile = {"name": body.name, "description": body.description, "age": body.age if body.age is not None else 25, "gender": body.gender, "appearance": body.appearance, "fictional": True}
+        prompt = "Portrait of this character, facing the viewer, suitable as a profile picture" + (". " + body.prompt.strip() if body.prompt.strip() else "")
+        return job_json(await rt.enqueue(user.id, "image", {"avatar": profile, "prompt": prompt, "options": {"preset": "fast", "width": 1024, "height": 1024}}))
 
     @app.post("/api/v1/conversations", status_code=201, response_model=ConversationResponse)
     async def conversation_alias(body: ConversationCreate, user: User = Depends(current_user)):
@@ -506,12 +541,12 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             message = owned(db, Message, body.message_id, user)
             if message.conversation_id != identifier:
                 raise HTTPException(404, "Message is outside this conversation")
-            convo = Conversation(user_id=user.id, character_id=source.character_id, title=body.title or (source.title[:108] + " · Branch"), parent_id=source.id, branch_message_id=message.id)
+            convo = Conversation(user_id=user.id, character_id=source.character_id, member_ids=source.member_ids, title=body.title or (source.title[:108] + " · Branch"), parent_id=source.id, branch_message_id=message.id)
             db.add(convo)
             db.flush()
             entries = db.scalars(select(Message).where(Message.conversation_id == identifier, Message.created_at <= message.created_at).order_by(Message.created_at)).all()
             for entry in entries:
-                db.add(Message(user_id=user.id, conversation_id=convo.id, role=entry.role, content=entry.content, created_at=entry.created_at, edited_at=entry.edited_at))
+                db.add(Message(user_id=user.id, conversation_id=convo.id, role=entry.role, content=entry.content, created_at=entry.created_at, edited_at=entry.edited_at, character_id=entry.character_id))
             for memory in db.scalars(select(Memory).where(Memory.conversation_id == identifier, Memory.automatic == False)).all():
                 db.add(Memory(user_id=user.id, conversation_id=convo.id, character_id=source.character_id, content=memory.content, enabled=memory.enabled))
             db.commit()

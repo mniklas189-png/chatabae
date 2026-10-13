@@ -130,7 +130,7 @@ def test_additive_upgrade_preserves_old_data_and_snapshots_before_migration(tmp_
     assert "recovery_codes" in inspect(migrated.engine).get_table_names()
     with migrated.engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT name FROM characters WHERE id='keep'").scalar() == "Preserved"
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0004"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0005"
     assert "generation_metadata" in {c["name"] for c in inspect(migrated.engine).get_columns("assets")}
     backups = list((tmp_path / "backups").glob("daily-*"))
     assert len(backups) == 1

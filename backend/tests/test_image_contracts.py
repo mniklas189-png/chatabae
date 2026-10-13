@@ -3,6 +3,7 @@ import os
 import time
 import wave
 
+import pytest
 from PIL import Image
 from sqlalchemy import select
 
@@ -41,17 +42,19 @@ def test_image_presets_seed_metadata_and_canonical_avatar(service):
     assert client.get(f"/api/v1/characters/{char['id']}", headers=headers).json()["avatar_asset_id"] == avatar["id"]
 
 
-def test_automatic_avatar_shares_image_quota_and_keeps_profile_usable(service):
+@pytest.mark.parametrize("mode", ["automatic", "assisted"])
+def test_ai_characters_get_a_portrait_from_their_own_avatar_quota(service, mode):
     client, _, provider = service
     headers, _, _ = register(client)
     _, convo = character_conversation(client, headers)
     first = client.post(f"/api/v1/conversations/{convo['id']}/images", headers=headers, json={"prompt": "Portrait", "options": {"seed": 42}}).json()
     assert wait_job(client, headers, first["id"])["status"] == "completed"
-    response = client.post("/api/v1/characters/generate", headers=headers, json={"idea": "An imagined botanist", "mode": "automatic", "language": "de"})
+    # The chat image's five-minute gap must not block the new character's portrait.
+    response = client.post("/api/v1/characters/generate", headers=headers, json={"idea": "An imagined botanist", "mode": mode, "language": "de"})
     completed = wait_job(client, headers, response.json()["id"])
-    assert completed["status"] == "completed" and completed["output"]["image_error"]
+    assert completed["status"] == "completed" and completed["output"]["image_error"] is None
     profile = completed["output"]["character"]
-    assert profile["avatar_asset_id"] is None and len(provider.image_options) == 1
+    assert profile["avatar_asset_id"] and len(provider.image_options) == 2
     assert {"gender", "interests", "communication_style", "relationship", "instructions", "appearance", "background"} <= profile["profile"].keys()
     assert profile["language"] == "de" and profile["voice"].startswith("piper:de_DE-")
 

@@ -126,10 +126,11 @@ export async function watchJob(jobId: string, onEvent: (event: StreamEvent) => v
     await new Promise<void>((resolve) => { const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); }; const timer = setTimeout(finish, Math.min(1000 * 2 ** attempts, 15000)); signal.addEventListener('abort', finish, { once: true }); if (signal.aborted) finish(); });
   }
 }
-export async function assetBlob(id: string, signal?: AbortSignal) {
+export async function assetData(id: string, signal?: AbortSignal) {
   if (!API_URL) throw new ApiError(503, 'The server connection has not been configured yet.');
   const timeout = AbortSignal.timeout(15000);
   const response = await fetch(API_URL + '/api/v1/assets/' + encodeURIComponent(id) + '/content', { headers: accessToken ? { Authorization: 'Bearer ' + accessToken } : {}, signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   if (!response.ok) throw new ApiError(response.status, 'This media could not be loaded.');
-  return URL.createObjectURL(await response.blob());
+  return response.blob();
 }
+export async function assetBlob(id: string, signal?: AbortSignal) { return URL.createObjectURL(await assetData(id, signal)); }

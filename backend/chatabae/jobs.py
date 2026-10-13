@@ -4,6 +4,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import os
 import secrets
 import time
@@ -31,6 +32,53 @@ IMAGE_BLOCKED = "This image was blocked by moderation. Change the prompt and try
 STANDARD_CHAT_RULES = "Never sexualize minors or assist wrongdoing."
 ADULT_CHAT_RULES = ("This is private fiction between consenting adults; the user confirmed being 18 or older. Explicit sexual content, nudity, violence, gore and dark themes are allowed when the story calls for it; do not refuse, censor or moralize. "
                     "Hard limits that always apply: never sexualize minors or anyone under 18 or childlike, and never sexual content about real, identifiable people.")
+
+
+def mention_position(text, name):
+    """Earliest position where the full or first name is addressed, or -1."""
+    positions = []
+    for candidate in {name.casefold().strip(), name.casefold().split()[0] if name.split() else ""}:
+        if candidate:
+            match = re.search(r"(?<!\w)@?" + re.escape(candidate) + r"(?!\w)", text)
+            if match:
+                positions.append(match.start())
+    return min(positions, default=-1)
+
+
+def group_speakers(ids, names, history):
+    """Addressed characters reply in the order they were named; otherwise everyone replies, continuing the rotation."""
+    last_user = next((m.content for m in reversed(history) if m.role == "user"), "").casefold()
+    mentioned = sorted((position, identifier) for identifier in ids for position in [mention_position(last_user, names[identifier])] if position >= 0)
+    if mentioned:
+        return [identifier for _, identifier in mentioned]
+    last = next((m.character_id for m in reversed(history) if m.role == "assistant" and m.character_id in ids), None)
+    start = (ids.index(last) + 1) % len(ids) if last else 0
+    return ids[start:] + ids[:start]
+
+
+def group_history(past, speaker, names, default_speaker, budget=16000):
+    """The speaker's own lines stay assistant turns; the user and other characters become labelled user turns."""
+    turns = []
+    for role, character_id, content in reversed(past):
+        if not content:
+            continue
+        if len(content) > budget:
+            break
+        budget -= len(content)
+        author = character_id or default_speaker
+        if role == "assistant" and author == speaker:
+            turns.append(("assistant", content))
+        elif role == "assistant":
+            turns.append(("user", names.get(author, "Another character") + ": " + content))
+        else:
+            turns.append(("user", "User: " + content))
+    merged = []
+    for role, content in reversed(turns):
+        if merged and merged[-1]["role"] == role:
+            merged[-1]["content"] += "\n\n" + content
+        else:
+            merged.append({"role": role, "content": content})
+    return merged
 
 
 def adult_mode(db, user_id, profile):
@@ -94,7 +142,7 @@ def public_snapshot(data):
 
 def message_json(db, message):
     assets = db.scalars(select(Asset).where(Asset.message_id == message.id)).all()
-    return {"id": message.id, "conversation_id": message.conversation_id, "role": message.role, "content": message.content, "created_at": timestamp(message.created_at), "edited_at": timestamp(message.edited_at), "assets": [asset_json(a) for a in assets]}
+    return {"id": message.id, "conversation_id": message.conversation_id, "role": message.role, "content": message.content, "created_at": timestamp(message.created_at), "edited_at": timestamp(message.edited_at), "assets": [asset_json(a) for a in assets], "character_id": message.character_id}
 
 
 def job_json(job):
@@ -276,6 +324,8 @@ class Runtime:
                     if kind == "chat":
                         reserve_quota(db, f"chatmin:{user_id}", limits.chat_per_minute, 60)
                         reserve_quota(db, f"chatday:{user_id}", limits.chat_per_day, 86400)
+                    elif kind == "image" and payload.get("avatar"):
+                        self.reserve_avatar(db, user_id)
                     elif kind == "image":
                         self.reserve_image(db, user_id)
                     elif kind == "speech":
@@ -361,6 +411,10 @@ class Runtime:
         # A stopped/crashed worker may restart when its runtime and model files are available.
         if not isinstance(values, dict) or not values.get("available", False):
             raise HTTPException(503, f"The local {capability} capability is unavailable. Check the model setup.")
+
+    def reserve_avatar(self, db, user_id):
+        self.ensure_capability("image", {})
+        reserve_quota(db, f"avatarday:{user_id}", self.settings.limits.avatar_per_day, 86400)
 
     def reserve_image(self, db, user_id):
         self.ensure_capability("image", {})
@@ -504,11 +558,92 @@ class Runtime:
                 result["avatar_path"] = str(asset_path(self, avatar))
         return result
 
+    def group_members(self, db, convo, user_id):
+        """Readable members of a group chat in speaking order; removed or unshared characters are skipped."""
+        members = []
+        for identifier in convo.member_ids or [convo.character_id]:
+            char = db.get(Character, identifier)
+            if not char or (char.user_id != user_id and (char.visibility != "public" or not char.approved_snapshot)):
+                continue
+            members.append((char, self.flattened(db, char, public=char.user_id != user_id)))
+        return members
+
+    async def group_chat(self, job_id, payload, user_id, cancel):
+        with self.db.sessions() as db:
+            convo = db.get(Conversation, payload["conversation_id"])
+            members = self.group_members(db, convo, user_id)
+            if not members:
+                raise RuntimeError("No characters are left in this group chat")
+            profiles = {char.id: profile for char, profile in members}
+            names = {char.id: profile.get("name") or char.name for char, profile in members}
+            ids = list(profiles)
+            history = db.scalars(select(Message).where(Message.conversation_id == convo.id).order_by(Message.created_at.desc()).limit(40)).all()[::-1]
+            target_id = payload.get("regenerate_message_id")
+            target = db.get(Message, target_id) if target_id else None
+            if target:
+                history = [m for m in history if m.created_at < target.created_at]
+                speakers = [target.character_id] if target.character_id in ids else ids[:1]
+            else:
+                speakers = group_speakers(ids, names, history)
+            # One member under 18 keeps the standard rules for the whole group.
+            rules = ADULT_CHAT_RULES if all(adult_mode(db, user_id, profile) for profile in profiles.values()) else STANDARD_CHAT_RULES
+            memories = [m.content for m in db.scalars(select(Memory).where(Memory.conversation_id == convo.id, Memory.enabled == True).limit(20)).all()]
+            summary, default_speaker = convo.summary, convo.character_id
+            past = [(m.role, m.character_id, m.content) for m in history]
+        written, last_id = [], None
+        for speaker in speakers:
+            name, profile = names[speaker], profiles[speaker]
+            others = {names[other]: profiles[other].get("description", "") for other in ids if other != speaker}
+            system = (f"You are roleplaying {name} in a group chat with the user and these characters: {', '.join(others)}. " + rules
+                      + f" Write only {name}'s next message. Never write lines for the user or the other characters and do not start with your name. You may react to what the others said."
+                      + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Your character data:\n"
+                      + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False) + "\nOther characters:\n" + json.dumps(others, ensure_ascii=False))
+            if memories:
+                system += "\nUser-controlled memories:\n" + "\n".join(memories)
+            if summary:
+                system += "\nConversation summary:\n" + summary
+            messages = [{"role": "system", "content": system[:16000]}, *group_history(past, speaker, names, default_speaker)]
+            self.publish(job_id, "speaker", {"character_id": speaker})
+            chunks = []
+            async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
+                if cancel.is_set():
+                    break
+                chunks.append(token)
+                self.publish(job_id, "token", {"text": token, "character_id": speaker})
+            if cancel.is_set():
+                return {"messages": written}
+            content = "".join(chunks).strip()
+            if content.casefold().startswith(name.casefold() + ":"):
+                content = content[len(name) + 1:].lstrip()
+            with self.db.sessions() as db:
+                convo = db.get(Conversation, payload["conversation_id"])
+                if not convo:
+                    raise RuntimeError("Conversation removed")
+                message = db.get(Message, target_id) if target_id else None
+                if message:
+                    message.content, message.edited_at = content, time.time()
+                else:
+                    message = Message(user_id=user_id, conversation_id=convo.id, role="assistant", content=content, character_id=speaker)
+                    db.add(message)
+                convo.updated_at = time.time()
+                db.flush()
+                written.append(message_json(db, message))
+                last_id = message.id
+                db.commit()
+            past.append(("assistant", speaker, content))
+        await self.update_memory(payload["conversation_id"], last_id, cancel)
+        return {"message": written[-1], "messages": written}
+
     async def execute(self, job_id, cancel):
         with self.db.sessions() as db:
             job = db.get(Job, job_id)
             payload, user_id, kind = job.payload, job.user_id, job.kind
         if kind == "chat":
+            with self.db.sessions() as db:
+                convo = db.get(Conversation, payload["conversation_id"])
+                group = bool(convo and convo.user_id == user_id and len(convo.member_ids or []) > 1)
+            if group:
+                return await self.group_chat(job_id, payload, user_id, cancel)
             with self.db.sessions() as db:
                 convo = db.get(Conversation, payload["conversation_id"])
                 if not convo or convo.user_id != user_id:
@@ -609,16 +744,20 @@ class Runtime:
                 char_id = char.id
                 db.commit()
             image_error = None
-            if payload["mode"] == "automatic":
+            # Every AI-created character also gets an AI portrait.
+            if payload["mode"] in {"assisted", "automatic"}:
                 try:
                     async with self.admission_lock:
                         with self.db.sessions() as db:
-                            self.reserve_image(db, user_id)
+                            self.reserve_avatar(db, user_id)
                             db.commit()
                     options = {**ImageOptions().model_dump(), "seed": secrets.randbelow(2**32)}
                     self.active_gpu_kind = "image"
                     try:
-                        images = await self.generate_image({**profile, "name": validated.name}, "Portrait of this character", options, cancel, lambda progress: self.progress(job_id, progress))
+                        portrait = {**profile, "name": validated.name, "description": validated.description}
+                        with self.db.sessions() as db:
+                            portrait["content_mode"] = "adult" if adult_mode(db, user_id, portrait) else "standard"
+                        images = await self.generate_image(portrait, "Portrait of this character, facing the viewer, suitable as a profile picture", options, cancel, lambda progress: self.progress(job_id, progress))
                     finally:
                         self.active_gpu_kind = "chat"
                     if images and not cancel.is_set():
@@ -687,10 +826,16 @@ class Runtime:
                 char_id, convo_id = char.id if char else None, convo.id if convo else None
                 scene = None
                 if kind == "image":
-                    profile["content_mode"] = "adult" if adult_mode(db, user_id, profile) else "standard"
+                    if payload.get("avatar"):
+                        profile = dict(payload["avatar"])
+                    members = self.group_members(db, convo, user_id) if convo and len(convo.member_ids or []) > 1 else []
+                    adult = adult_mode(db, user_id, profile) and all(adult_mode(db, user_id, other) for _, other in members)
+                    profile["content_mode"] = "adult" if adult else "standard"
                     if convo:
                         recent = db.scalars(select(Message).where(Message.conversation_id == convo.id, Message.content != "").order_by(Message.created_at.desc()).limit(12)).all()[::-1]
-                        scene = {"summary": convo.summary, "messages": [{"role": m.role, "content": m.content[:600]} for m in recent]}
+                        names = {c.id: p.get("name") or c.name for c, p in members}
+                        scene = {"summary": convo.summary, "messages": [{"role": m.role, "speaker": names.get(m.character_id), "content": m.content[:600]} for m in recent],
+                                 "characters": [{key: other.get(key) for key in ("name", "age", "gender", "appearance")} for c, other in members if c.id != convo.character_id]}
                 voice = payload.get("voice")
                 if kind == "speech" and voice.startswith("xtts:ref:"):
                     reference = db.get(Asset, voice[len("xtts:ref:"):])

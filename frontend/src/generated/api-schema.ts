@@ -124,6 +124,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/avatar-jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Avatar Job */
+        post: operations["avatar_job_api_v1_avatar_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/characters": {
         parameters: {
             query?: never;
@@ -417,6 +434,23 @@ export interface paths {
         get: operations["favorite_list_api_v1_favorites_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/group-conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add Group Conversation */
+        post: operations["add_group_conversation_api_v1_group_conversations_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -878,6 +912,36 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** AvatarRequest */
+        AvatarRequest: {
+            /** Age */
+            age?: number | null;
+            /**
+             * Appearance
+             * @default
+             */
+            appearance: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /**
+             * Gender
+             * @default
+             */
+            gender: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Prompt
+             * @default
+             */
+            prompt: string;
+        };
         /** Body_avatar_api_v1_characters__identifier__avatar_post */
         Body_avatar_api_v1_characters__identifier__avatar_post: {
             /** File */
@@ -1056,6 +1120,8 @@ export interface components {
             branch_message_id?: string | null;
             /** Character Id */
             character_id: string;
+            /** Character Ids */
+            character_ids: string[];
             /** Created At */
             created_at: string;
             /** Id */
@@ -1084,6 +1150,16 @@ export interface components {
              * @default 0.8
              */
             top_p: number;
+        };
+        /** GroupConversationCreate */
+        GroupConversationCreate: {
+            /** Character Ids */
+            character_ids: string[];
+            /**
+             * Title
+             * @default
+             */
+            title: string;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -1209,6 +1285,8 @@ export interface components {
         MessageResponse: {
             /** Assets */
             assets: components["schemas"]["AssetResponse"][];
+            /** Character Id */
+            character_id?: string | null;
             /** Content */
             content: string;
             /** Conversation Id */
@@ -1562,6 +1640,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TokenResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    avatar_job_api_v1_avatar_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AvatarRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2421,6 +2532,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CharacterResponse"][];
+                };
+            };
+        };
+    };
+    add_group_conversation_api_v1_group_conversations_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupConversationCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
