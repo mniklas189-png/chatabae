@@ -22,6 +22,8 @@ Ziel: kostenlose öffentliche Character-AI-Website auf GitHub Pages. Alle KI und
 
 **Admin, Fotos von Charakteren, Schreiben während Bildern (13.10.2026):** `admin_usernames` in der privaten Konfiguration nimmt Konten von allen Konto-Limits und Kontingenten aus (Betreiberkonto eingetragen). Limitmeldungen nennen das Limit und die Restzeit; `limits.image_gap_seconds` ist einstellbar. Charaktere können von sich aus ein Foto schicken: Endet eine Antwort mit `[photo: …]`, wird der Text ohne Tag gespeichert und ein Bildauftrag gestartet (bei Limits still übersprungen). Bildaufträge laufen im Hintergrund mit eigener Fortschrittskarte, Nachrichten können währenddessen gesendet werden; nur ein laufender Chat-Auftrag blockiert. Bei 18+ beschreibt der Bildprompt gewünschte Nacktheit ausdrücklich, und das Referenzporträt dient nur noch für Gesicht und Identität, nicht für Kleidung oder Pose. `POST /internal/portraits` (lokale Verwaltung) erzeugt KI-Porträts für alle Charaktere ohne Profilbild und setzt sie nach Fertigstellung.
 
+**Natürlicher Chatstil und Referenzbilder (13.10.2026):** Schreibregeln (kurz, alltagssprachlich, kaum Ausrufezeichen und Emojis, keine Körper-Erzählprosa) stehen am Ende des Systemprompts; spontane Fotos erst nach mindestens 8 Nachrichten ohne Bild. Bilder mit Referenzporträt scheiterten an ComfyUIs DynamicVRAM (`aimdo memory compile error`, comfy-aimdo 0.5.5); die eigene Chatabae-Instanz startet deshalb mit `--disable-dynamic-vram`. Real geprüft: Referenzbild in 80 s.
+
 ## Projekt und Architektur
 
 - Arbeitsordner: `C:\Users\meyer\Desktop\!CODING\chatabae`.

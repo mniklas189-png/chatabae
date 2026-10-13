@@ -669,7 +669,8 @@ class ProviderManager:
                 raise ProviderUnavailable("image", "Configured image engine port is occupied by another process")
             for path in (self.output_dir, self.input_dir, self.runtime_dir / "user", self.runtime_dir / "temp"):
                 path.mkdir(parents=True, exist_ok=True)
-            command = [str(python), "-B", "-s", str(comfy_root / "main.py"), "--listen", "127.0.0.1", "--port", str(port), "--base-directory", str(self.runtime_dir), "--models-directory", str(models), "--output-directory", str(self.output_dir), "--input-directory", str(self.input_dir), "--temp-directory", str(self.runtime_dir / "temp"), "--user-directory", str(self.runtime_dir / "user"), "--disable-auto-launch", "--disable-api-nodes", "--disable-all-custom-nodes", "--reserve-vram", "0.8", "--disable-pinned-memory", "--fast-disk", "--preview-method", "none", "--cache-none"]
+            # ComfyUI's DynamicVRAM (comfy-aimdo 0.5.5) fails with "aimdo memory compile error" when a reference portrait is used; estimate-based loading works.
+            command = [str(python), "-B", "-s", str(comfy_root / "main.py"), "--listen", "127.0.0.1", "--port", str(port), "--base-directory", str(self.runtime_dir), "--models-directory", str(models), "--output-directory", str(self.output_dir), "--input-directory", str(self.input_dir), "--temp-directory", str(self.runtime_dir / "temp"), "--user-directory", str(self.runtime_dir / "user"), "--disable-auto-launch", "--disable-api-nodes", "--disable-all-custom-nodes", "--reserve-vram", "0.8", "--disable-dynamic-vram", "--disable-pinned-memory", "--fast-disk", "--preview-method", "none", "--cache-none"]
             self._spawn("image", command)
             try:
                 await self._wait_ready("image", self._image_url + "/system_stats", timeout=180)

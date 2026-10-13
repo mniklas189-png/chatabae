@@ -36,8 +36,14 @@ ADULT_CHAT_RULES = ("Session content settings (set by the platform operator, hig
                     "Only two limits exist: no sexual content involving anyone under 18 or childlike, and no sexual content about real, identifiable people; everything else is allowed.")
 
 
-PHOTO_RULE = ("You can send the user a photo when it fits naturally, for example when they want to see you, where you are or what you are doing, or when you would spontaneously share a selfie. "
-              "Do this only now and then, not in every message. To send one, end your message with [photo: short description of the picture] on its own line.")
+STYLE_RULES = ("Write like a real person texting in a chat app, not like an AI assistant or a novelist. Keep messages short, usually one to three sentences; go longer only when the moment really needs it. "
+               "Use everyday words, contractions and the occasional fragment. React to what the user just said, and sometimes ask something back. "
+               "Most sentences end with a period, not an exclamation mark. Do not describe your heartbeat, breathing, sweat or muscles unless the user asks or the scene is intimate. "
+               "No purple prose; usually no emojis, at most one now and then; no narration in asterisks unless the user writes that way, and do not repeat your greeting or earlier lines. "
+               "Never sound like customer service and never mention being an AI. Keep your character's own personality, voice and mood.")
+PHOTO_RULE = ("Rarely, when it really fits (for example the user wants to see you, where you are or what you are doing), you can send a photo by ending your message with [photo: short description of the picture] on its own line. "
+              "Most messages have no photo.")
+PHOTO_SPACING = 8
 PHOTO_TAG = re.compile(r"\[(?:photo|foto|bild|picture|image)\s*:\s*([^\]\n]{3,300})\]\s*$", re.IGNORECASE)
 
 
@@ -576,7 +582,11 @@ class Runtime:
         return result
 
     async def send_photo(self, user_id, conversation_id, description, speaker=None):
-        """Queue a photo the character decided to send; quietly skipped when images are unavailable or limited."""
+        """Queue a photo the character decided to send; quietly skipped when images are unavailable, limited or too frequent."""
+        with self.db.sessions() as db:
+            recent = db.scalars(select(Message).where(Message.conversation_id == conversation_id).order_by(Message.created_at.desc()).limit(PHOTO_SPACING)).all()
+            if any(m.role == "assistant" and not m.content for m in recent):
+                return None
         try:
             job = await self.enqueue(user_id, "image", {"conversation_id": conversation_id, "prompt": description, "options": {}, "spontaneous": True, **({"speaker_id": speaker} if speaker else {})})
             return job_json(job)
@@ -621,14 +631,14 @@ class Runtime:
             name, profile = names[speaker], profiles[speaker]
             others = {names[other]: profiles[other].get("description", "") for other in ids if other != speaker}
             system = (f"You are roleplaying {name} in a group chat with the user and these characters: {', '.join(others)}. " + rules
-                      + f" Write only {name}'s next message. Never write lines for the user or the other characters and do not start with your name. You may react to what the others said. " + PHOTO_RULE
+                      + f" Write only {name}'s next message. Never write lines for the user or the other characters and do not start with your name. You may react to what the others said."
                       + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Your character data:\n"
                       + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False) + "\nOther characters:\n" + json.dumps(others, ensure_ascii=False))
             if memories:
                 system += "\nUser-controlled memories:\n" + "\n".join(memories)
             if summary:
                 system += "\nConversation summary:\n" + summary
-            messages = [{"role": "system", "content": system[:16000]}, *group_history(past, speaker, names, default_speaker)]
+            messages = [{"role": "system", "content": system[:14500] + "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE}, *group_history(past, speaker, names, default_speaker)]
             self.publish(job_id, "speaker", {"character_id": speaker})
             chunks = []
             async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
@@ -687,13 +697,13 @@ class Runtime:
                     target = db.get(Message, payload["regenerate_message_id"])
                     history = [m for m in history if target and m.created_at < target.created_at]
                 rules = ADULT_CHAT_RULES if adult_mode(db, user_id, profile) else STANDARD_CHAT_RULES
-                system = "You are roleplaying a character. " + rules + " " + PHOTO_RULE + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
+                system = "You are roleplaying a character. " + rules + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
                 if memories:
                     system += "\nUser-controlled memories:\n" + "\n".join(m.content for m in memories)
                 if convo.summary:
                     system += "\nConversation summary:\n" + convo.summary
-                # Keep input bounded independently of UI controls and raw history length.
-                messages = [{"role": "system", "content": system[:16000]}]
+                # Keep input bounded independently of UI controls and raw history length; the writing style stays last.
+                messages = [{"role": "system", "content": system[:14500] + "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE}]
                 budget, chosen = 16000, []
                 for entry in reversed(history):
                     if len(entry.content) > budget:
