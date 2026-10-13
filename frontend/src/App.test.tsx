@@ -394,6 +394,15 @@ describe('character space', () => {
     imageEvents!.enqueue(encoder.encode('id: 1\nevent: completed\ndata: {"output":{"assets":[]}}\n\n')); imageEvents!.close();
     await waitFor(() => expect(screen.queryByRole('status', { name: 'Creating image…' })).toBeNull());
   });
+  it('shows roleplay actions between asterisks as italic narration', async () => {
+    const reply: Message = { id: 'action-reply', conversation_id: conversation.id, role: 'assistant', content: '*leans against the desk* Hey, you made it.', assets: [], created_at: conversation.created_at, edited_at: null };
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/messages') ? body([reply]) : signedInResponse(url)));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    const action = await screen.findByText('leans against the desk');
+    expect(action.tagName).toBe('EM');
+    expect(screen.queryByText(/\*leans/)).toBeNull();
+    expect(screen.getByText(/Hey, you made it\./)).toBeTruthy();
+  });
   it('locks image format to the stable character reference portrait', async () => {
     vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/content') ? new Response(new Blob(['portrait'], { type: 'image/png' })) : signedInResponse(url, [{ ...character, avatar_asset_id: 'canonical-avatar' }])));
     render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);

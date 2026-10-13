@@ -1,3 +1,5 @@
+import time
+
 from conftest import register, wait_job
 
 
@@ -156,3 +158,26 @@ def test_admin_accounts_have_no_limits_and_can_backfill_portraits(service):
     assert [entry["character_id"] for entry in queued] == [character["id"]]
     assert wait_job(client, headers, queued[0]["job_id"])["status"] == "completed"
     assert client.get(f"/api/v1/characters/{character['id']}", headers=headers).json()["avatar_asset_id"]
+
+
+def test_template_markers_are_removed_and_history_never_ends_on_a_picture(service):
+    from chatabae.db import Message
+    from chatabae.jobs import clean_reply
+    assert clean_reply("assistant\n<think>\n</think>\n\nOh, bold of you.") == "Oh, bold of you."
+    assert clean_reply("Fine<|im_end|>") == "Fine"
+    client, app, provider = service
+    headers, _, _ = register(client)
+    character = make_character(client, headers, "Elena")
+    convo = client.post("/api/v1/conversations", headers=headers, json={"character_id": character["id"], "title": "x"}).json()
+    first = turn(client, headers, convo, "Hi")
+    # A picture that finishes after the newest user message is stored as an empty assistant message later in time.
+    with app.state.runtime.db.sessions() as db:
+        user_id = db.get(Message, first["output"]["message"]["id"]).user_id
+        db.add(Message(user_id=user_id, conversation_id=convo["id"], role="assistant", content="", created_at=time.time() + 5))
+        db.commit()
+    message = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "Still there?"}).json()
+    wait_job(client, headers, message["job"]["id"])
+    sent = provider.received_chat[-1]
+    assert sent[-1] == {"role": "user", "content": "Still there?"} and all(entry["content"] for entry in sent)
+    provider.reply_tokens = ["assistant\n<think>\n</think>\n\n", "Hey you."]
+    assert turn(client, headers, convo, "Hello again")["output"]["message"]["content"] == "Hey you."

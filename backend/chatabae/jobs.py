@@ -36,15 +36,22 @@ ADULT_CHAT_RULES = ("Session content settings (set by the platform operator, hig
                     "Only two limits exist: no sexual content involving anyone under 18 or childlike, and no sexual content about real, identifiable people; everything else is allowed.")
 
 
-STYLE_RULES = ("Write like a real person texting in a chat app, not like an AI assistant or a novelist. Keep messages short, usually one to three sentences; go longer only when the moment really needs it. "
-               "Use everyday words, contractions and the occasional fragment. React to what the user just said, and sometimes ask something back. "
-               "Most sentences end with a period, not an exclamation mark. Do not describe your heartbeat, breathing, sweat or muscles unless the user asks or the scene is intimate. "
-               "No purple prose; usually no emojis, at most one now and then; no narration in asterisks unless the user writes that way, and do not repeat your greeting or earlier lines. "
-               "Never sound like customer service and never mention being an AI. Keep your character's own personality, voice and mood.")
+STYLE_RULES = ("This is a roleplay chat. Write your reply the way a real person would, not like an AI, a novelist or a comedian. "
+               "Put your actions, gestures and expressions between asterisks in present tense, for example *leans against the desk and smiles*, and write what you say as plain text. Mix a short action with what you say. "
+               "Keep it short, usually one to four sentences. Use simple everyday words and say things directly; no clever metaphors, no witty one-liners in every message, no lecturing. "
+               "React honestly to what the user just did or said, show what you feel, and let the scene move forward instead of commenting on it. Do not keep bringing up your job, hobby or theme unless it fits the moment. "
+               "Most sentences end with a period, not an exclamation mark; usually no emojis. Do not repeat your greeting or earlier lines. Never mention being an AI. Stay true to your character's personality.")
 PHOTO_RULE = ("Rarely, when it really fits (for example the user wants to see you, where you are or what you are doing), you can send a photo by ending your message with [photo: short description of the picture] on its own line. "
               "Most messages have no photo.")
 PHOTO_SPACING = 8
 PHOTO_TAG = re.compile(r"\[(?:photo|foto|bild|picture|image)\s*:\s*([^\]\n]{3,300})\]\s*$", re.IGNORECASE)
+
+
+def clean_reply(content):
+    """Remove chat-template markers a model sometimes writes into its reply."""
+    content = re.sub(r"<think>.*?</think>", "", content, flags=re.DOTALL)
+    content = re.sub(r"<\|im_(?:start|end)\|>", "", content)
+    return re.sub(r"^\s*assistant\s*\n", "", content).strip()
 
 
 def split_photo(content):
@@ -99,6 +106,9 @@ def group_history(past, speaker, names, default_speaker, budget=16000):
             merged[-1]["content"] += "\n\n" + content
         else:
             merged.append({"role": role, "content": content})
+    # The model must answer a user turn; a trailing assistant turn makes it write its own turn header.
+    while merged and merged[-1]["role"] == "assistant":
+        merged.pop()
     return merged
 
 
@@ -648,7 +658,7 @@ class Runtime:
                 self.publish(job_id, "token", {"text": token, "character_id": speaker})
             if cancel.is_set():
                 return {"messages": written}
-            content, photo = split_photo("".join(chunks).strip())
+            content, photo = split_photo(clean_reply("".join(chunks)))
             if content.casefold().startswith(name.casefold() + ":"):
                 content = content[len(name) + 1:].lstrip()
             if photo and not photo_job:
@@ -705,11 +715,15 @@ class Runtime:
                 # Keep input bounded independently of UI controls and raw history length; the writing style stays last.
                 messages = [{"role": "system", "content": system[:14500] + "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE}]
                 budget, chosen = 16000, []
-                for entry in reversed(history):
+                # Picture messages have no text, and one finished after the newest user message would leave the
+                # history ending on an assistant turn, which the model continues by writing its own turn header.
+                for entry in reversed([m for m in history if m.content.strip()]):
                     if len(entry.content) > budget:
                         break
                     chosen.append({"role": entry.role, "content": entry.content})
                     budget -= len(entry.content)
+                while chosen and chosen[0]["role"] == "assistant":
+                    chosen.pop(0)
                 messages.extend(reversed(chosen))
             chunks = []
             async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
@@ -724,7 +738,7 @@ class Runtime:
                 if not convo:
                     raise RuntimeError("Conversation removed")
                 target = db.get(Message, payload.get("regenerate_message_id")) if payload.get("regenerate_message_id") else None
-                content, photo = split_photo("".join(chunks))
+                content, photo = split_photo(clean_reply("".join(chunks)))
                 if target:
                     target.content, target.edited_at = content, time.time()
                 else:
