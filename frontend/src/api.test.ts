@@ -42,7 +42,7 @@ describe('persisted job streaming', () => {
     try { const pending = watchJob('stalled', () => {}, controller.signal); await vi.advanceTimersByTimeAsync(44999); expect(lost).not.toHaveBeenCalled(); await vi.advanceTimersByTimeAsync(1); await pending; expect(lost).toHaveBeenCalledOnce(); }
     finally { controller.abort(); window.removeEventListener('connection-lost', lost); }
   });
-  it.each([401, 403, 404])('does not report authentication or ownership status %i as a lost connection', async status => {
+  it.each([401, 403, 404, 429])('does not report authentication, ownership or quota status %i as a lost connection', async status => {
     const lost = vi.fn(); window.addEventListener('connection-lost', lost);
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('{}', { status })));
     try { await expect(watchJob('private', () => {}, new AbortController().signal)).rejects.toMatchObject({ status }); expect(lost).not.toHaveBeenCalled(); }

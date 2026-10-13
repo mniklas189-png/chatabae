@@ -122,7 +122,7 @@ export async function watchJob(jobId: string, onEvent: (event: StreamEvent) => v
       }
       if (!signal.aborted) throw new Error('The server stopped sending updates. Reopen the conversation to check its saved state.');
       } finally { clearTimeout(watchdog); signal.removeEventListener('abort', abort); await reader?.cancel().catch(() => {}); }
-    } catch (error) { if (signal.aborted) return; if (!(error instanceof ApiError && error.status >= 400 && error.status < 500)) reportLost(); if (++attempts > 5 || error instanceof ApiError && [401, 403, 404].includes(error.status)) throw error; }
+    } catch (error) { if (signal.aborted) return; if (!(error instanceof ApiError && error.status >= 400 && error.status < 500)) reportLost(); if (++attempts > 5 || error instanceof ApiError && [401, 403, 404, 429].includes(error.status)) throw error; }
     await new Promise<void>((resolve) => { const finish = () => { clearTimeout(timer); signal.removeEventListener('abort', finish); resolve(); }; const timer = setTimeout(finish, Math.min(1000 * 2 ** attempts, 15000)); signal.addEventListener('abort', finish, { once: true }); if (signal.aborted) finish(); });
   }
 }

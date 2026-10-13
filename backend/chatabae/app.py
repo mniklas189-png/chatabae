@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from fastapi import Depends, FastAPI, Form, HTTPException, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import func, or_, select
 
 from .auth import current_user, make_auth_router, reserve_quota
@@ -21,7 +22,7 @@ from .db import Asset, AuthSession, Character, Conversation, Favorite, Job, JobE
 from .jobs import Runtime, TERMINAL, UnavailableProviders, XTTS_LICENSE, asset_json, character_json, job_json, message_json, public_snapshot, timestamp
 from .intent import explicit_image_request
 from .media import adopt, asset_path, storage_check
-from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse
+from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse
 
 
 def owned(db, model, identifier, user):
@@ -112,7 +113,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                 capabilities[key] = {name: value for name, value in values.items() if name in {"available", "ready", "enabled", "vision_available", "public_allowed", "device", "languages", "voices"}}
                 if not values.get("available"):
                     capabilities[key]["reason"] = "This local capability is unavailable; check the operator dashboard."
-        return {"state": rt.state, "online": rt.state == "ready", "instance_id": settings.instance_id, "mode": settings.mode, "queue": {"queued": queued, "running": running, "capacity": settings.limits.queue_size}, "capabilities": capabilities, "public_images": settings.public_image_allowed, "xtts": settings.xtts_enabled}
+        return {"state": rt.state, "online": rt.state == "ready", "instance_id": settings.instance_id, "mode": settings.mode, "queue": {"queued": queued, "running": running, "capacity": settings.limits.queue_size, "active_gpu_kind": rt.active_gpu_kind}, "capabilities": capabilities, "public_images": settings.public_image_allowed, "xtts": settings.xtts_enabled}
 
     @app.get("/api/v1/voices")
     async def voices(request: Request):
@@ -236,8 +237,14 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
         with rt.db.sessions() as db:
             char = owned(db, Character, identifier, user)
             values = {"name": char.name, "description": char.description, "profile": char.profile, "language": char.language, "voice": char.voice, "visibility": char.visibility}
-            values.update(body.model_dump(exclude_unset=True))
-            verified = CharacterInput.model_validate(values)
+            updates = body.model_dump(exclude_unset=True)
+            if body.profile is not None and set(body.profile) == {"generation_settings"}:
+                updates["profile"] = {**char.profile, **body.profile}
+            values.update(updates)
+            try:
+                verified = CharacterInput.model_validate(values)
+            except ValidationError:
+                raise HTTPException(422, "Character values are invalid") from None
             if char.visibility == "public" and verified.visibility == "private":
                 preserve_shared_conversations(db, char)
             reserve_quota(db, f"profilechanges:{user.id}", settings.limits.profile_per_day, 86400)
@@ -401,13 +408,22 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             owned(db, Conversation, identifier, user)
             return [message_json(db, m) for m in db.scalars(select(Message).where(Message.conversation_id == identifier).order_by(Message.created_at)).all()]
 
+    def character_generation(char, public=False):
+        profile = character_json(char, public)["profile"]
+        try:
+            generation = ProfileGeneration.model_validate(profile.get("generation_settings", {})).model_dump()
+        except ValidationError:
+            generation = ProfileGeneration().model_dump()
+        generation["max_tokens"] = min(generation["max_tokens"], settings.limits.max_output_tokens)
+        return generation
+
     @app.post("/api/v1/conversations/{identifier}/messages", status_code=202, response_model=TurnResponse)
     async def add_message(identifier: str, body: Turn, user: User = Depends(current_user)):
-        if len(body.content) > settings.limits.max_input_chars or body.generation.max_tokens > settings.limits.max_output_tokens:
+        if len(body.content) > settings.limits.max_input_chars or ("generation" in body.model_fields_set and body.generation.max_tokens > settings.limits.max_output_tokens):
             raise HTTPException(422, "Generation settings exceed server limits")
         with rt.db.sessions() as db:
             convo = owned(db, Conversation, identifier, user)
-            readable_char(db, convo.character_id, user)
+            char, public = readable_char(db, convo.character_id, user)
             active = db.scalars(select(Job).where(Job.user_id == user.id, Job.kind.in_(["chat", "image"]), Job.status.in_(["queued", "running"]))).all()
             if any(job.payload.get("conversation_id") == identifier for job in active):
                 raise HTTPException(409, "A turn is already running in this conversation")
@@ -417,7 +433,8 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             if explicit_image_request(body.content):
                 job = await rt.enqueue(user.id, "image", {"conversation_id": identifier, "prompt": body.content, "options": {}}, db=db)
             else:
-                job = await rt.enqueue(user.id, "chat", {"conversation_id": identifier, "generation": body.generation.model_dump()}, db=db)
+                generation = body.generation.model_dump() if "generation" in body.model_fields_set else character_generation(char, public)
+                job = await rt.enqueue(user.id, "chat", {"conversation_id": identifier, "generation": generation}, db=db)
             convo.updated_at = time.time()
             db.commit()
             return {"message": message_json(db, message), "job": job_json(job)}
@@ -456,15 +473,18 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
 
     @app.post("/api/v1/messages/{identifier}/regenerate", status_code=202, response_model=JobResponse)
     async def regenerate(identifier: str, body: Regenerate, user: User = Depends(current_user)):
-        if body.generation.max_tokens > settings.limits.max_output_tokens:
+        if "generation" in body.model_fields_set and body.generation.max_tokens > settings.limits.max_output_tokens:
             raise HTTPException(422, "Output limit exceeded")
         with rt.db.sessions() as db:
             message = owned(db, Message, identifier, user)
             ensure_convo_idle(db, message.conversation_id)
             if message.role != "assistant":
                 raise HTTPException(422, "Only assistant replies can be regenerated")
+            convo = owned(db, Conversation, message.conversation_id, user)
+            char, public = readable_char(db, convo.character_id, user)
+            generation = body.generation.model_dump() if "generation" in body.model_fields_set else character_generation(char, public)
             invalidate_derived(db, message.conversation_id)
-            job = await rt.enqueue(user.id, "chat", {"conversation_id": message.conversation_id, "regenerate_message_id": identifier, "generation": body.generation.model_dump()}, db=db)
+            job = await rt.enqueue(user.id, "chat", {"conversation_id": message.conversation_id, "regenerate_message_id": identifier, "generation": generation}, db=db)
             db.commit()
             return job_json(job)
 

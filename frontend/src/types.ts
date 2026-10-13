@@ -1,10 +1,12 @@
 import type { components } from './generated/api-schema';
 type Schemas = components['schemas'];
+export type GenerationSettings = Schemas['Generation'];
 export type Language = Schemas['CharacterResponse']['language'];
 export interface CharacterProfile {
   age: number | string; gender: string; appearance: string; personality: string;
   background: string; interests: string; communication_style: string;
   relationship: string; instructions: string;
+  generation_settings?: GenerationSettings;
 }
 export type Character = Omit<Schemas['CharacterResponse'], 'profile'> & { profile: CharacterProfile; example?: boolean; color?: string; tag?: string };
 export type Conversation = Schemas['ConversationResponse'];

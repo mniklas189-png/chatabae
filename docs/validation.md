@@ -41,11 +41,17 @@ Ein echtes konsistentes SQLite-/Medienbackup wurde erstellt und anschließend an
 
 TypeScript-Prüfung, Frontendtests, Produktionsbuild und npm-Audit bestanden. Die OpenAPI-Typen werden reproduzierbar generiert. GitHub Actions wiederholt die Backendtests auf Windows und Linux; nur der statische Frontend-Build wird an Pages übergeben.
 
-Der abschließende lokale Stand umfasst **79 Python- und 32 Frontendtests**. GitHub Actions **Verify** bestand für Windows, Linux und Frontend; **Publish website** bestand einschließlich Deployment. Die öffentliche Pages-Seite und ihr JavaScript liefern HTTP 200, verwenden `/chatabae/assets/` und enthalten die richtige Funnel-Origin.
+Der zuerst veröffentlichte lokale Stand umfasst **79 Python- und 32 Frontendtests**. GitHub Actions **Verify** bestand für Windows, Linux und Frontend; **Publish website** bestand einschließlich Deployment. Die öffentliche Pages-Seite und ihr JavaScript liefern HTTP 200, verwenden `/chatabae/assets/` und enthalten die richtige Funnel-Origin.
 
 Der reale öffentliche HTTPS-Ablauf bestand zusätzlich Registrierung, PKCE, Chatstream (19 Fragmente / 0,78 s), vollständiges KI-Profil (7,58 s), Piper-Audio (1,58 s), tatsächliche Wiederverwendung des Audiocaches, Export und Entfernung des eigenen Testkontos. CORS akzeptierte die konfigurierte Pages-Origin und lehnte eine fremde Origin ab; die öffentliche Verwaltungsroute blieb 404. Ein Formatproblem bei modellgenerierten Interessen wurde durch JSON-Schema und begrenzte Normalisierung von Zeichenkettenlisten behoben, ohne die Eingabevalidierung fremder Daten aufzuheben.
 
 Das gezielte Hardkill des eigenen, zuvor als idle verifizierten Online-Supervisors beendete seine API-/Modell-/Control-Listener und entfernte die Foreground-Funnel-Freigabe. Danach startete dieselbe HTTPS-Adresse mit neuer, extern verifizierter Instanz-ID. Ein normaler Stop dauerte in der beobachteten Ausführung etwa eine Sekunde; während der Offline-Phase war die öffentliche API nicht mehr erreichbar.
+
+Der vollständige lokale Supervisorstart lieferte zusätzlich die Entwicklungsoberfläche auf Port 5173 und eine bereite API im Modus `local`, ohne Funnel-Freigabe. Normaler Stop entfernte Frontend-, API-, Verwaltungs-, Chat- und Control-Listener; Tailscale meldete danach keine Serve-Konfiguration.
+
+Die fortgesetzte Backendprüfung umfasst **97 bestandene Python-Tests**. Neue Fälle belegen die Ablehnung fehlender Modellfunktionen vor Jobannahme/Quotenverbrauch, den Vorrang der Nutzungsfreigabe, validierte und gespeicherte Charakterparameter für Chat und Regeneration sowie unveränderte öffentliche Snapshots bis zur erneuten Prüfung. Der öffentliche GPU-Status enthält nur `chat`, `image` oder `null` und keine privaten IDs, Prompts oder Pfade.
+
+Der aktualisierte Gesamtstand besteht mit **97 Python- und 75 Frontendtests**, reproduzierbaren API-Typen, TypeScript und Produktionsbuild. npm-Audit meldete null bekannte Schwachstellen. Neue JSDOM-Integrationstests prüfen Satzvorlesen bei offenem Chatstream, manuellen Start nach Autoplayblockade, verspätete Auftragsbestätigung nach Stop und sichere Übergänge bei Navigation, Logout und Autoplay-Aus. Bekannte wiederhergestellte Sprachjobs werden ebenfalls abgebrochen. Parameterpersistenz, veraltete Reloads und isolierte temporäre Vorgaben je Unterhaltung sind geprüft. Tatsächliches Browser-Autoplay bleibt Teil der manuellen Abnahme.
 
 ## Ausstehende externe und manuelle Abnahme
 

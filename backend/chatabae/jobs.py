@@ -15,7 +15,7 @@ from sqlalchemy import func, select
 from .auth import reserve_quota
 from .db import Asset, Character, Conversation, Database, Job, JobEvent, Memory, Message, uid
 from .media import adopt, asset_path, storage_check
-from .schemas import CharacterInput, ImageOptions
+from .schemas import CharacterInput, ImageOptions, ProfileGeneration
 
 logger = logging.getLogger(__name__)
 TERMINAL = {"completed", "failed", "cancelled"}
@@ -48,7 +48,7 @@ def character_json(character, public=False):
 
 def public_snapshot(data):
     """Publish only the documented display fields; prompts/reference paths stay private."""
-    fields = {"age", "fictional", "gender", "appearance", "personality", "background", "backstory", "interests", "communication_style", "greeting", "scenario"}
+    fields = {"age", "fictional", "gender", "appearance", "personality", "background", "backstory", "interests", "communication_style", "greeting", "scenario", "generation_settings"}
     private = {"instructions", "system_prompt", "relationship", "speaker_wav", "reference_paths", "reference_image", "voice_reference", "avatar_path", "path"}
     def clean(value):
         if isinstance(value, dict):
@@ -57,6 +57,11 @@ def public_snapshot(data):
             return [clean(v) for v in value]
         return value
     profile = {key: clean(value) for key, value in data.get("profile", {}).items() if key in fields}
+    if "generation_settings" in profile:
+        try:
+            profile["generation_settings"] = ProfileGeneration.model_validate(profile["generation_settings"]).model_dump()
+        except ValueError:
+            profile.pop("generation_settings")
     voice = data.get("voice", "")
     standard_voices = {"kokoro:af_heart", "kokoro:af_bella", "kokoro:af_sarah", "kokoro:am_michael", "kokoro:am_puck", "kokoro:bf_emma", "kokoro:bm_george", "piper:de_DE-thorsten-medium", "piper:de_DE-kerstin-low", "piper:en_US-danny-low", "xtts:Ana Florence", "xtts:Craig Gutsy"}
     if voice not in standard_voices:
@@ -117,6 +122,7 @@ class Runtime:
         self.last_user = {"gpu": None, "cpu": None, "hq_cpu": None}
         self.chat_streak = 0
         self.chat_ready = False
+        self.active_gpu_kind = None
         self.start_error = None
 
     async def start(self):
@@ -380,6 +386,8 @@ class Runtime:
                 continue
             cancel = asyncio.Event()
             self.cancellations[job_id] = cancel
+            if lane == "gpu":
+                self.active_gpu_kind = "image" if job.kind == "image" else "chat"
             try:
                 limits = self.settings.limits
                 timeout = limits.chat_timeout if job.kind == "chat" else limits.moderation_timeout if job.kind == "moderation" else limits.tts_timeout if lane == "cpu" else limits.heavy_timeout
@@ -427,6 +435,8 @@ class Runtime:
                         logger.exception("GPU release failed")
             finally:
                 self.cancellations.pop(job_id, None)
+                if lane == "gpu":
+                    self.active_gpu_kind = None
 
     def flattened(self, db, char, public=False):
         if public and (char.visibility != "public" or not char.approved_snapshot):
@@ -555,7 +565,11 @@ class Runtime:
                             self.reserve_image(db, user_id)
                             db.commit()
                     options = {**ImageOptions().model_dump(), "seed": secrets.randbelow(2**32)}
-                    images = await self.providers.generate_image({**profile, "name": validated.name}, "Portrait of this character", options, cancel, lambda progress: self.progress(job_id, progress))
+                    self.active_gpu_kind = "image"
+                    try:
+                        images = await self.providers.generate_image({**profile, "name": validated.name}, "Portrait of this character", options, cancel, lambda progress: self.progress(job_id, progress))
+                    finally:
+                        self.active_gpu_kind = "chat"
                     if images and not cancel.is_set():
                         with self.db.sessions() as db:
                             char = db.get(Character, char_id)

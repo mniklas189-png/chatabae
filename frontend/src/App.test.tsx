@@ -105,9 +105,13 @@ describe('character space', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Name' }), { target: { value: 'Numeric profile' } });
     fireEvent.change(screen.getByRole('textbox', { name: 'Short description' }), { target: { value: 'A schema-checked fictional character.' } });
     fireEvent.change(screen.getByRole('spinbutton', { name: 'Age' }), { target: { value: '25' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '0.4' } });
+    fireEvent.change(screen.getByRole('slider', { name: 'Vocabulary variety (top_p)' }), { target: { value: '0.9' } });
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum response tokens' }), { target: { value: '768' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save character' }));
     await waitFor(() => { const error = screen.queryByRole('alert'); if (error) throw new Error(error.textContent || 'Save failed'); expect(saved).not.toBeNull(); }, { timeout: 10000 });
     expect((saved as unknown as { profile: { age: number } }).profile.age).toBe(25);
+    expect((saved as unknown as { profile: { generation_settings: unknown } }).profile.generation_settings).toEqual({ temperature: 0.4, top_p: 0.9, max_tokens: 768 });
   }, 20000);
   it('generates speech for a new assistant response with the selected speed, without reading old history', async () => {
     const oldMessage: Message = { id: 'old', conversation_id: conversation.id, role: 'assistant', content: 'A saved answer.', created_at: conversation.created_at, edited_at: null, assets: [] };
@@ -135,7 +139,7 @@ describe('character space', () => {
     fireEvent.change(screen.getByRole('textbox', { name: 'Write a message…' }), { target: { value: 'Hello' } });
     fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
     await waitFor(() => expect(spoken).toBe(true));
-    await waitFor(() => { const audioElement = document.querySelector('audio'); expect(audioElement?.getAttribute('autoplay')).not.toBeNull(); expect(audioElement?.volume).toBe(0.5); });
+    await waitFor(() => { const audioElement = document.querySelector('audio'); expect(audioElement?.getAttribute('src')).toBe('blob:test-audio'); expect(audioElement?.volume).toBe(0.5); });
   });
   it('requires the exact username before deleting the account and clears private browser state', async () => {
     let deleted = false;
@@ -288,5 +292,89 @@ describe('character space', () => {
     expect((screen.getByRole('textbox', { name: 'Write a message…' }) as HTMLTextAreaElement).disabled).toBe(true);
     fireEvent.click(offline);
     await screen.findByRole('button', { name: 'Server online' });
+  });
+  it('reads stored character defaults and saves only generation settings on explicit confirmation', async () => {
+    let current = { ...character, profile: { ...character.profile, generation_settings: { temperature: 0.4, top_p: 0.6, max_tokens: 256 } } };
+    const patches: unknown[] = []; let sentGeneration: unknown;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/characters/' + character.id) && init?.method === 'PATCH') { const patch = JSON.parse(String(init.body)); patches.push(patch); current = { ...current, profile: { ...current.profile, ...patch.profile } }; return body(current); }
+      if (url.endsWith('/messages') && init?.method === 'POST') { sentGeneration = JSON.parse(String(init.body)).generation; return body({ message: { id: 'sent', conversation_id: conversation.id, role: 'user', content: 'Hello', created_at: conversation.created_at, edited_at: null, assets: [] }, job: job('defaults-job', 'chat') }, 202); }
+      if (url.includes('/jobs/defaults-job/events')) return completed({});
+      return signedInResponse(url, [current]);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Settings' }); fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    expect((screen.getByRole('slider', { name: 'Response creativity' }) as HTMLInputElement).value).toBe('0.4');
+    expect((screen.getByRole('slider', { name: 'Vocabulary variety (top_p)' }) as HTMLInputElement).value).toBe('0.6');
+    expect((screen.getByRole('spinbutton', { name: 'Maximum response tokens' }) as HTMLInputElement).value).toBe('256');
+    fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '1.1' } }); fireEvent.change(screen.getByRole('slider', { name: 'Vocabulary variety (top_p)' }), { target: { value: '0.9' } }); fireEvent.change(screen.getByRole('spinbutton', { name: 'Maximum response tokens' }), { target: { value: '768' } });
+    expect(patches).toHaveLength(0); fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await waitFor(() => expect(patches).toEqual([{ profile: { generation_settings: { temperature: 1.1, top_p: 0.9, max_tokens: 768 } } }]));
+    expect(current.profile.background).toBe(character.profile.background);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Write a message…' }), { target: { value: 'Hello' } }); fireEvent.click(screen.getByRole('button', { name: 'Send message' }));
+    await waitFor(() => expect(sentGeneration).toEqual({ temperature: 1.1, top_p: 0.9, max_tokens: 768 }));
+  });
+  it('keeps newer edits through a slow save and ignores older parallel library replies after the latest save', async () => {
+    let current = { ...character, profile: { ...character.profile, generation_settings: { temperature: 0.4, top_p: 0.6, max_tokens: 256 } } }; let releaseFirst: ((value: Response) => void) | undefined, releaseOldRead: ((value: Response) => void) | undefined; let patches = 0, holdNextRead = false;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/characters/' + character.id) && init?.method === 'PATCH') { patches++; const patch = JSON.parse(String(init.body)); current = { ...current, profile: { ...current.profile, ...patch.profile } }; if (patches === 1) return new Promise<Response>(resolve => { releaseFirst = resolve; }); return body(current); }
+      if (url.endsWith('/characters') && holdNextRead) { holdNextRead = false; return new Promise<Response>(resolve => { releaseOldRead = resolve; }); }
+      return signedInResponse(url, [current]);
+    }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Settings' }); fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '0.8' } }); fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await waitFor(() => expect(patches).toBe(1)); fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '1.2' } });
+    releaseFirst!(body(current)); await waitFor(() => expect((screen.getByRole('button', { name: 'Save defaults' }) as HTMLButtonElement).disabled).toBe(false));
+    expect((screen.getByRole('slider', { name: 'Response creativity' }) as HTMLInputElement).value).toBe('1.2');
+    const stale = { ...current, profile: { ...current.profile } }; holdNextRead = true; fireEvent(window, new Event('server-refreshed'));
+    await waitFor(() => expect(releaseOldRead).toBeTypeOf('function')); fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await waitFor(() => expect(patches).toBe(2)); await waitFor(() => expect((screen.getByRole('button', { name: 'Save defaults' }) as HTMLButtonElement).disabled).toBe(true));
+    releaseOldRead!(body([stale]));
+    await waitFor(() => expect((screen.getByRole('slider', { name: 'Response creativity' }) as HTMLInputElement).value).toBe('1.2'));
+    expect(current.profile.generation_settings.temperature).toBe(1.2);
+  });
+  it('does not show a pending parameter error after sign-out', async () => {
+    let rejectSave: ((reason: Error) => void) | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => url.endsWith('/characters/' + character.id) && init?.method === 'PATCH' ? new Promise<Response>((_resolve, reject) => { rejectSave = reject; }) : signedInResponse(url)));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Settings' }); fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '0.8' } }); fireEvent.click(screen.getByRole('button', { name: 'Save defaults' }));
+    await waitFor(() => expect(rejectSave).toBeTypeOf('function')); fireEvent.click(screen.getByRole('button', { name: /alice/ }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /alice/ })).toBeNull()); rejectSave!(new Error('Old account save failed'));
+    await waitFor(() => expect(screen.queryByText('Old account save failed')).toBeNull());
+  });
+  it('keeps foreign-character changes temporary and resets them when switching conversations', async () => {
+    const second = { ...conversation, id: 'conversation-2', title: 'Second conversation' }; let patches = 0;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { if (init?.method === 'PATCH') patches++; if (url.endsWith('/library')) return body([character]); if (url.endsWith('/conversations')) return body([conversation, second]); return signedInResponse(url, []); }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Settings' }); fireEvent.click(screen.getByRole('button', { name: 'Settings' }));
+    fireEvent.change(screen.getByRole('slider', { name: 'Response creativity' }), { target: { value: '1.2' } }); expect(screen.queryByRole('button', { name: 'Save defaults' })).toBeNull();
+    fireEvent.click(screen.getByRole('link', { name: /Second conversation/ }));
+    await waitFor(() => expect((screen.getByRole('slider', { name: 'Response creativity' }) as HTMLInputElement).value).toBe('0.7'));
+    expect(patches).toBe(0);
+  });
+  it('shows image queue blocking only while the server reports a running generation and hides it once started', async () => {
+    let events: ReadableStreamDefaultController<Uint8Array> | undefined;
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => { if (url.endsWith('/status')) return body({ online: true, state: 'ready', queue: { active_gpu_kind: 'chat' } }); if (url.endsWith('/images')) return body(job('blocked-image', 'image'), 202); if (url.includes('/jobs/blocked-image/events')) return new Response(new ReadableStream({ start(controller) { events = controller; } }), { headers: { 'Content-Type': 'text/event-stream' } }); return signedInResponse(url); }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await screen.findByRole('button', { name: 'Create image' }); fireEvent.click(screen.getByRole('button', { name: 'Create image' })); const dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Describe the image you’d like to create' }), { target: { value: 'A quiet café.' } }); fireEvent.click(within(dialog).getByRole('button', { name: 'Create image' }));
+    await screen.findByText('Your image is queued until the current generation finishes.');
+    events!.enqueue(new TextEncoder().encode('id: 1\nevent: started\ndata: {}\n\n'));
+    await waitFor(() => expect(screen.queryByText('Your image is queued until the current generation finishes.')).toBeNull());
+    events!.enqueue(new TextEncoder().encode('id: 2\nevent: completed\ndata: {"output":{}}\n\n'));
+  });
+  it('ignores a delayed resume response after switching to another conversation', async () => {
+    let resume: ((value: Response) => void) | undefined; const streams: string[] = []; const second = { ...conversation, id: 'second-conversation', title: 'Second conversation' };
+    sessionStorage.setItem('chatabae.job.' + conversation.id, JSON.stringify({ userId: token.user.id, jobId: 'old-resume' }));
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => { if (url.endsWith('/jobs/old-resume')) return new Promise<Response>(resolve => { resume = resolve; }); if (url.includes('/events')) streams.push(url); if (url.endsWith('/conversations')) return body([conversation, second]); return signedInResponse(url); }));
+    render(<MemoryRouter initialEntries={['/conversations/' + conversation.id]}><App/></MemoryRouter>);
+    await waitFor(() => expect(resume).toBeTypeOf('function')); fireEvent.click(screen.getByRole('link', { name: /Second conversation/ }));
+    await waitFor(() => expect((screen.getByRole('link', { name: /Second conversation/ }).closest('.conversation-item') as HTMLElement).classList.contains('active')).toBe(true));
+    resume!(body({ ...job('old-resume', 'speech'), status: 'running' }));
+    await new Promise(resolve => setTimeout(resolve, 20)); expect(streams).toEqual([]);
+    expect(sessionStorage.getItem('chatabae.job.' + second.id)).toBeNull();
   });
 });

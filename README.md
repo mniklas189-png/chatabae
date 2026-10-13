@@ -4,7 +4,7 @@
 
 ## Einmal einrichten
 
-Voraussetzungen: Windows 11, Python 3.12, NVIDIA-Treiber für die RTX 4070, persönliches Tailscale-Konto und das vorhandene `LocalImageAI`-Projekt neben diesem Ordner.
+Voraussetzungen: Windows 11, Python 3.12, NVIDIA-Treiber für die RTX 4070, persönliches Tailscale-Konto und das vorhandene `LocalImageAI`-Projekt neben diesem Ordner. Für Piper verwendet diese Installation außerdem `!local-ally-code/piper/piper.exe` und `de_DE-thorsten-medium.onnx` aus dem Nachbarprojekt. `setup.bat --voices` lädt die weiteren Sprachmodelle, installiert aber diese beiden bereits vorhandenen Dateien nicht. Bei anderen Speicherorten die privaten `models.piper_executable`- und `models.piper_model`-Pfade anpassen.
 
 1. `setup.bat --models --voices --tailscale` starten. Das installiert Projektabhängigkeiten, eine eigene portable Node-24-Version und geprüft heruntergeladene Modellartefakte. Windows kann für Tailscale eine Administratorbestätigung verlangen.
 2. In Tailscale anmelden. MagicDNS, HTTPS und Funnel einmal freischalten. Den Gerätenamen danach beibehalten. Geräteschlüsselablauf für den eigenen Backend-Knoten in der Tailscale-Verwaltung deaktivieren, wenn regelmäßige erneute Anmeldung vermieden werden soll.

@@ -28,18 +28,21 @@ class FakeProviders:
         self.received_images = []
         self.image_options = []
         self.speech_version = "test-model-v1"
+        self.received_generations = []
+        self.capabilities = {kind: {"available": True, "ready": False} for kind in ("chat", "profile", "moderation", "image", "tts", "kokoro", "piper", "xtts")}
 
     async def start(self): pass
     async def ensure_chat_ready(self): pass
     async def unload_gpu(self): pass
     async def stop(self): self.stopped = True
-    def status(self): return {"chat": {"available": True}, "moderation": {"available": True}, "image": {"available": True}, "tts": {"available": True}}
+    def status(self): return dict(self.capabilities)
     def voices(self): return [{"id": "kokoro:af_heart", "name": "Heart", "language": "en", "engine": "kokoro", "gender": "female", "available": True}]
     def speech_fingerprint(self, voice, language=""): return self.speech_version
 
     async def stream_chat(self, messages, generation, cancel_event):
         self.started.append("chat")
         self.received_chat.append(messages)
+        self.received_generations.append(generation)
         for token in ["Hello", " fictional", " friend."]:
             await asyncio.sleep(self.chat_delay)
             if cancel_event.is_set():

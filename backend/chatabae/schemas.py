@@ -7,6 +7,12 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProfileGeneration(Strict):
+    temperature: float = Field(0.7, ge=0, le=2)
+    top_p: float = Field(0.8, gt=0, le=1)
+    max_tokens: int = Field(512, ge=32, le=1024)
+
+
 class CharacterInput(Strict):
     name: str = Field(min_length=1, max_length=80)
     description: str = Field(default="", max_length=1000)
@@ -25,6 +31,8 @@ class CharacterInput(Strict):
             raise ValueError("Character age must be nonnegative")
         if type(value.get("fictional", True)) is not bool:
             raise ValueError("Fictional must be a boolean")
+        if "generation_settings" in value:
+            value = {**value, "generation_settings": ProfileGeneration.model_validate(value["generation_settings"]).model_dump()}
         return {**value, "age": value.get("age", 18), "fictional": value.get("fictional", True)}
 
 
@@ -35,6 +43,15 @@ class CharacterPatch(Strict):
     language: Literal["de", "en"] | None = None
     voice: str | None = Field(default=None, max_length=100)
     visibility: Literal["private", "public"] | None = None
+
+    @field_validator("profile")
+    @classmethod
+    def check_profile(cls, value):
+        if value is None:
+            raise ValueError("Profile cannot be null")
+        verified = CharacterInput.check_profile(value)
+        # Preserve patch keys so a settings-only update cannot reset persona fields.
+        return {**value, **({"generation_settings": verified["generation_settings"]} if "generation_settings" in value else {})}
 
 
 class Generation(Strict):

@@ -2,7 +2,7 @@
 
 Stand: 13. Oktober 2026. Diese Datei ermöglicht die Fortsetzung, wenn das Nutzungslimit des bisherigen Agenten erreicht wird. Sie enthält keine Zugangsdaten. Den tatsächlichen Laufzeit- und Git-Status beim Übernehmen erneut prüfen.
 
-**Aktueller Kurzstand:** Website auf GitHub Pages veröffentlicht; öffentliche HTTPS-Anmeldung, Chat, KI-Profil, Sprache und Audiocache bestanden. 79 Python-/32 Frontendtests, GitHub-CI auf Windows/Linux, Build und Pages-Deployment bestanden. Code ist committed und auf `main` gepusht (Implementierungscommit `3618a22`). Supervisor-Hardkill und Neustart über dieselbe Adresse sind geprüft. Das Backend wurde nach der Abnahme normal gestoppt; zum Benutzen `online.bat` starten. Offene manuelle Prüfungen und Tailscale-Verwaltungseinstellungen stehen unten.
+**Aktueller Kurzstand:** Website auf GitHub Pages veröffentlicht; öffentliche HTTPS-Anmeldung, Chat, KI-Profil, Sprache und Audiocache bestanden. Gespeicherte Charakterparameter, genaue Queue-Hinweise und Satzvorlesen während des Chats sind implementiert. Der aktuelle Gesamtstand besteht mit **97 Python- und 75 Frontendtests**, reproduzierbaren API-Typen, Produktionsbuild und npm-Audit ohne bekannte Schwachstellen. Aktuelle Veröffentlichungs- und CI-Läufe stehen in [GitHub Actions](https://github.com/mniklas189-png/chatabae/actions). Supervisor-Hardkill, Neustart sowie lokaler Start/Stop samt Frontend sind geprüft. Das Backend ist offline; zum Benutzen `online.bat` starten. Offene manuelle Prüfungen und Tailscale-Verwaltungseinstellungen stehen unten.
 
 ## Auftrag und Grenzen
 
@@ -42,16 +42,33 @@ Die originale `LocalImageAI`-Installation und ihre rund 17,3 GB Bildgewichte wer
 
 - Backend-HTTPS-Anmeldeformulare, Argon2id, einmalige Recovery-Codes, PKCE/S256, exakter Callback, 60-Sekunden-Code, 15-Minuten-Access-Token im Browser-RAM, cookiegebundene rotierende Refresh-Sitzungen und First-Party-Fallback.
 - Eigentumsschutz für Chats, Jobs, Medien und Erinnerungen; geschützte lokale Verwaltung, Kontosperren, Meldungen, Drain, Backup, Hardware-/Sitzungsstatus.
-- Manuelle, KI-gestützte und automatische Charaktere, einzelne KI-Feldverbesserungen, editierbare Profilfelder, private Stimmreferenzen und öffentliche geprüfte Snapshots.
+- Manuelle, KI-gestützte und automatische Charaktere, einzelne KI-Feldverbesserungen, editierbare Profilfelder, gespeicherte Generierungsparameter, private Stimmreferenzen und öffentliche geprüfte Snapshots. Temperatur, `top_p` und Antwortlänge sind validiert; Chat und Regeneration verwenden serverseitig die Charakterdefaults, wenn keine eigenen Parameter gesendet werden. Auch reine Parameteränderungen durchlaufen Revision und erneute Veröffentlichungskontrolle.
 - Messenger, echter Qwen-Stream, Suche, mehrere Gespräche, Bearbeiten/Regeneration/Zweige, Quelleninvalidierung, Erinnerungen und Zusammenfassungen.
 - Typisierte Bildjobs per Button und eindeutigem DE-/EN-Bildkommando, Galerie, Fast15/Balanced25, effektiver Seed und Parameter. Mit Referenzavatar bestimmt die Hauptreferenz das Bildformat; Größenwahl gilt nur ohne Referenz.
-- Kokoro/Piper auf CPU, XTTS auf CPU als langsamere Qualitätsoption, Stimmenvorschau, Tempo/Lautstärke, Auto-Vorlesen neuer Antworten, Pause/Stopp, private WAV-Referenzen mit Berechtigungsbestätigung, versionsabhängiger Audiocache und XTTS-Lizenzlink.
-- Persistente Quoten, Rundlauf über Konten, eine GPU-Lease, begrenzte CPU-Pools, gemessene VRAM-Prüfung vor Modellladung, verständliche Ressourcenfehler und fremde GPU-Prozesse werden ausschließlich gemeldet.
+- Kokoro/Piper auf CPU, XTTS auf CPU als langsamere Qualitätsoption, Stimmenvorschau, Tempo/Lautstärke, Satzvorlesen während neuer Chatstreams, Pause/Stopp und manuelles Resume bei Autoplayblockade. Die separate Sprachqueue beeinflusst den Chatstream nicht; höchstens zehn Aufträge pro Antwort, begrenzter Textpuffer und keine Quoten-Retryschleife. Wiederhergestellte Streams werden nicht erneut automatisch gesprochen. XTTS beginnt nach der vollständigen Antwort und meldet die Grenze von 1.000 Zeichen, ohne heimlich zu kürzen. Private WAV-Referenzen verlangen Berechtigungsbestätigung; Audiocache und XTTS-Lizenzlink sind implementiert.
+- Persistente Quoten, Rundlauf über Konten, eine GPU-Lease, begrenzte CPU-Pools, gemessene VRAM-Prüfung vor Modellladung, verständliche Ressourcenfehler und fremde GPU-Prozesse werden ausschließlich gemeldet. Der öffentliche Queue-Status enthält nur die aktive GPU-Klasse `chat`, `image` oder `null`, ohne Nutzer-, Job- oder Promptdaten.
 - Kontoexport/-löschung, tägliche/wöchentliche konsistente Backups, geprüfte Offline-Wiederherstellung, DE/EN, Responsive-CSS und Offline-Beispiele.
+
+## Fortschritt nach Meilenstein
+
+| Meilenstein | Nachgewiesener Stand / verbleibende Abnahme |
+| --- | --- |
+| 1. Bestand und Voraussetzungen | Laufzeiten und Modelle installiert, Revisionen/Prüfsummen/Lizenzen dokumentiert. |
+| 2. Grundgerüst | Frontend, API, Migrationen, Supervisor und getrennte Verwaltung implementiert. |
+| 3. Character-Chat | Echter lokaler und öffentlicher Qwen-Stream, Speicherung und Zweige geprüft. |
+| 4. Charaktereditor | Drei Erstellungsarten, Erinnerungen, Snapshots und Reports implementiert; schwierige Moderationsbeispiele noch kalibrieren. |
+| 5. Bildintegration | Eigene ComfyUI und 20 reale Modellwechsel geprüft; Bildqualität/1-MP-Referenzlast noch prüfen. Öffentliche Nutzung bleibt lizenzbedingt gesperrt. |
+| 6. Sprache | Reale DE-/EN-Provider und Cache geprüft; Browserwiedergabe bleibt Teil der manuellen Abnahme. |
+| 7. Öffentlicher Betrieb | Pages, Funnel, echte HTTPS-Anmeldung und Chat bestanden; zwei Tailscale-Verwaltungseinstellungen noch bestätigen. |
+| 8. Ein-Klick-Betrieb | Lokaler/öffentlicher Start, normaler Stop, idle Hardkill und Neustart bestanden; Fenster-X/Windows-Neustart und gemischte aktive Last noch prüfen. |
+| 9. Optimierung | Kurze echte Laststufen mit 2/5/10/20 Konten gemessen; gemischte Langzeitlast und Funnel-Durchsatz stehen aus. |
+| 10. Fertigstellung | Automatische Prüfungen, Deployment und Backup/Wiederherstellung bestanden; visuelle/mobile Gesamt-Abnahme offen. |
 
 ## Nachgewiesene Prüfungen
 
-Der abschließend geprüfte Stand: **49 Backendtests, 26 Providertests, 4 Launchertests, 32 Frontendtests** bestanden (79 Python + 32 Frontend). TypeScript, Vite-Build und npm-Audit bestanden; Audit meldete null bekannte Schwachstellen. GitHub Actions bestand ebenfalls auf Windows/Linux und für das Frontend. Nach neuen Codeänderungen die passende Prüfung ausführen.
+Der aktuelle Gesamtstand besteht mit **67 Backendtests + 26 Providertests + 4 Launchertests = 97 Python-Tests** sowie **75 Frontendtests**. API-Typen ohne Schema-Drift, TypeScript, Vite-Build und npm-Audit bestanden; Audit meldete null bekannte Schwachstellen. GitHub Actions prüft zusätzlich Windows/Linux und das Frontend.
+
+Neue Frontendregressionen belegen gespeicherte Vorgaben unter Erhalt der Persona, Schutz gegen veraltete GET-Antworten und Kontowechsel, richtige Queue-Hinweise sowie Sprachwiedergabe während offenem Chat-SSE. Stop wartet auch verzögerte Auftragsbestätigungen ab und cancelt die eigene erhaltene ID. Autoplayblockade erlaubt manuelles Resume; Navigation, Autoplay-Aus und Logout erzeugen keine alten XTTS-Aufträge. Wiederhergestellte Sprachjobs sind ebenfalls im Stop-Tracker erfasst. Dies sind JSDOM-/Vertragstests; tatsächliches Browser-Autoplay bleibt ein manueller Abnahmepunkt.
 
 Realer lokaler und öffentlicher HTTPS-Ablauf bestanden: Registrierung/Recovery, PKCE, kein Refresh-Token in JavaScript-JSON, gestreamter Chat, vollständiges KI-Profil, Piper-WAV, tatsächlicher Audiocache, gespeicherte Nachrichten/Erinnerungen, Export und Entfernen des eigenen QA-Kontos. Früher durch Testhelferfehler verwaiste eigene QA-Konten wurden gezielt entfernt; andere Nutzerdaten blieben erhalten. Ein Modell-Formatproblem beim Interessenfeld wurde mit JSON-Schema plus begrenzter Normalisierung von Zeichenkettenlisten behoben und real verifiziert.
 
@@ -65,9 +82,10 @@ Echte Textmoderation und Vision-Prüfung mit CPU-Projektor bestanden auf harmlos
 
 1. Tailscale ist installiert und angemeldet; der Nutzer hat **Funnel bereits aktiviert**. HTTPS-Adresse und GitHub-Variable `VITE_API_BASE_URL` sind konfiguriert. GitHub Pages wurde auf Deployment durch Actions eingestellt.
 2. Der öffentliche Supervisor meldete **ONLINE** nach eigenem externen Healthcheck. Normales Stop, gezieltes Hardkill und Neustart funktionierten. Die Foreground-Freigabe und eigene Listener verschwanden beim Hardkill; dieselbe HTTPS-Origin kam mit neuer passender Instanz-ID zurück. Nach der Abnahme wurde das Backend normal gestoppt; die Website bleibt verfügbar. Den tatsächlichen Zustand vor einem Neustart prüfen, keine zweite Instanz erzwingen.
-3. Git ist initialisiert, Implementierung committed und auf `main` gepusht. GitHub Pages ist veröffentlicht und per HTTP geprüft. **Verify**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547010 (success). **Publish website**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547703 (success). Spätere Dokumentationscommits ändern diese Implementierungsreferenz nicht.
-4. Die Unteragenten erreichten zuletzt wieder ihr Nutzungslimit. Ihre finalen Offline-/503-Korrekturen wurden anschließend durch Root übernommen und geprüft: HTTP-200-Status mit `online:false` aktiviert die Oberfläche nicht; `connection-lost` wird sofort angezeigt; unavailable Modellfunktionen werden bei Jobannahme abgelehnt. Die Gesamtprüfung bestand danach mit 79/32 Tests.
+3. Git ist initialisiert, der erste Implementierungsstand ist committed und auf `main` gepusht. GitHub Pages ist veröffentlicht und per HTTP geprüft. Erste **Verify**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547010 (success). Erste **Publish website**: https://github.com/mniklas189-png/chatabae/actions/runs/38394547703 (success). Für die Fortsetzung mit Satzvorlesen/Charakterparametern den aktuellen Commit und die neuesten [Actions-Läufe](https://github.com/mniklas189-png/chatabae/actions) verwenden.
+4. HTTP-200-Status mit `online:false` aktiviert die Oberfläche nicht; `connection-lost` wird sofort angezeigt. Nicht verfügbare Modellfunktionen werden vor Jobannahme und Quotenverbrauch mit 503 abgelehnt; fehlende Nutzungsfreigaben behalten Vorrang. Bei Moderationsausfall bleibt die neue Revision zurückgehalten und ein bestehender öffentlicher Snapshot unverändert. Die fortgesetzte Backendprüfung einschließlich Charakterdefaults und Queue-Klassen umfasst 97 erfolgreiche Python-Tests.
 5. Migration **0003** ist in der realen lokalen Datenbank angewandt und der Alembic-Stand wurde geprüft. Vor Migrationen entsteht ein Backup. Niemals Nutzerdaten löschen, um Migrationen zu umgehen.
+6. Fortsetzung abgeschlossen und lokal gesamtgeprüft: 97 Python-/75 Frontendtests, Build/Audit und API-Typen bestanden. Charakterdefaults haben im Editor eigene Felder; im Messenger speichert ein ausdrücklicher Knopf die Vorgaben des eigenen Charakters. Fremde Charaktere erhalten nur temporäre Einstellungen je Unterhaltung. Satzqueue, Player, verzögerte Auftragsanlage und sämtliche genannten Resume-/Abbruchkorrekturen sind umgesetzt. Vor neuer Arbeit tatsächlichen Git-/CI-/Laufzeitstatus prüfen; übrig bleiben die unten genannten externen/manuellen Abnahmepunkte.
 
 ## Fortsetzung und Wiederholungsbefehle
 
