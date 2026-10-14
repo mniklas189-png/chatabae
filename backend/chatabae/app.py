@@ -426,10 +426,14 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
     @app.post("/api/v1/characters/{identifier}/conversations", status_code=201, response_model=ConversationResponse)
     async def add_conversation(identifier: str, body: ConversationInput, user: User = Depends(current_user)):
         with rt.db.sessions() as db:
-            readable_char(db, identifier, user)
+            char, public = readable_char(db, identifier, user)
             convo = Conversation(user_id=user.id, character_id=identifier, title=body.title)
             db.add(convo)
             db.flush()
+            # Like on Chai, the character opens the chat with its greeting.
+            greeting = str(character_json(char, public)["profile"].get("greeting") or "").strip()
+            if greeting:
+                db.add(Message(user_id=user.id, conversation_id=convo.id, role="assistant", content=greeting[:4000], character_id=identifier))
             db.commit()
             return conversation_json(convo)
 

@@ -1,6 +1,6 @@
 import pytest
 
-from chatabae.jobs import ADULT_CHAT_RULES, MINOR_RULES
+from chatabae.jobs import ADULT_CHAT_RULES, MINOR_NOTE, MINOR_RULES
 from chatabae.persona import chat_persona, read_statements
 from conftest import character_conversation, register, wait_job
 
@@ -63,8 +63,21 @@ def test_a_user_who_says_they_are_under_18_never_gets_adult_rules(service):
     assert wait_job(client, headers, job["id"])["status"] == "completed"
     system = provider.received_chat[-1][0]["content"]
     assert ADULT_CHAT_RULES not in system and system.endswith(MINOR_RULES)
+    # The regular model answers, and the rule is repeated next to the newest message.
+    assert provider.started[-1] == "safe chat" and provider.received_chat[-1][-1]["content"].endswith(MINOR_NOTE)
     # Saying a different age later does not lift the rule for this chat.
     job = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "jk im 25"}).json()["job"]
     assert wait_job(client, headers, job["id"])["status"] == "completed"
     assert provider.received_chat[-1][0]["content"].endswith(MINOR_RULES)
     assert client.get(f"/api/v1/conversations/{convo['id']}", headers=headers).json()["persona"]["minor"] is True
+
+
+def test_a_new_chat_opens_with_the_character_greeting(service):
+    client, _, provider = service
+    headers, _, _ = register(client)
+    _, convo = character_conversation(client, headers, profile={"age": 25, "fictional": True, "greeting": "*looks up* Oh, you're early."})
+    messages = client.get(f"/api/v1/conversations/{convo['id']}/messages", headers=headers).json()
+    assert [(m["role"], m["content"]) for m in messages] == [("assistant", "*looks up* Oh, you're early.")]
+    job = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "hey"}).json()["job"]
+    assert wait_job(client, headers, job["id"])["status"] == "completed"
+    assert [m["role"] for m in provider.received_chat[-1][1:]] == ["assistant", "user"]

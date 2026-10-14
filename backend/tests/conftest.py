@@ -45,8 +45,8 @@ class FakeProviders:
     def voices(self): return [{"id": "kokoro:af_heart", "name": "Heart", "language": "en", "engine": "kokoro", "gender": "female", "available": True}]
     def speech_fingerprint(self, voice, language=""): return self.speech_version
 
-    async def stream_chat(self, messages, generation, cancel_event):
-        self.started.append("chat")
+    async def stream_chat(self, messages, generation, cancel_event, safe=False):
+        self.started.append("safe chat" if safe else "chat")
         self.received_chat.append(messages)
         self.received_generations.append(generation)
         for token in self.reply_tokens:

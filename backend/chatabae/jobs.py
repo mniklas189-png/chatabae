@@ -42,6 +42,17 @@ MINOR_RULES = ("Safety rule set by the platform operator, highest priority, over
                "If the user pushes for it, refuse in character without lecturing.")
 
 
+MINOR_NOTE = ("\n\n(Platform note, not written by the user: someone in this chat said they are under 18. Reply in character, but with nothing romantic, flirty or sexual at all: "
+              "no touching, kissing, innuendo or compliments about bodies. Steer the scene to something harmless.)")
+
+
+def guard_minor(messages, persona):
+    """Repeat the safety rule next to the newest message, where the model pays most attention."""
+    if persona.get("minor") and messages and messages[-1]["role"] == "user":
+        messages[-1] = {**messages[-1], "content": messages[-1]["content"] + MINOR_NOTE}
+    return messages
+
+
 STYLE_RULES = ("This is a character chat like on Chai. You are this character, a real person with feelings, moods and opinions, texting and roleplaying with the user. You are not an AI, an assistant, a narrator or a novelist. "
                "Put actions, gestures and expressions between asterisks in present tense without a subject, for example *smirks and leans closer*, and write what you say as plain text. Usually one short action and a line or two of speech. "
                "Keep replies short like real chat messages: mostly one to three sentences. Only write more when something big happens. "
@@ -729,7 +740,7 @@ class Runtime:
             messages = [self.system_message(system, persona), *group_history(past, speaker, names, default_speaker)]
             self.publish(job_id, "speaker", {"character_id": speaker})
             chunks, send = [], self.tokens(job_id, character_id=speaker)
-            async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
+            async for token in self.providers.stream_chat(guard_minor(messages, persona), payload["generation"], cancel, **({"safe": True} if persona.get("minor") else {})):
                 if cancel.is_set():
                     break
                 chunks.append(token)
@@ -806,7 +817,7 @@ class Runtime:
                     chosen.pop(0)
                 messages.extend(reversed(chosen))
             chunks, send = [], self.tokens(job_id)
-            async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
+            async for token in self.providers.stream_chat(guard_minor(messages, persona), payload["generation"], cancel, **({"safe": True} if persona.get("minor") else {})):
                 if cancel.is_set():
                     break
                 chunks.append(token)
