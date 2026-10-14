@@ -1,6 +1,7 @@
 import io
 import json
 import sqlite3
+import time
 import wave
 
 from sqlalchemy import inspect, select
@@ -108,7 +109,10 @@ def test_summary_and_source_linked_facts_are_persisted(service):
     job = client.post(f"/api/v1/conversations/{convo['id']}/messages", headers=headers, json={"content": "I like green"}).json()["job"]
     completed = wait_job(client, headers, job["id"])
     assert completed["status"] == "completed"
-    memories = client.get(f"/api/v1/conversations/{convo['id']}/memories", headers=headers).json()
+    # Condensation runs right after the reply was delivered.
+    deadline = time.monotonic() + 5
+    while not (memories := client.get(f"/api/v1/conversations/{convo['id']}/memories", headers=headers).json()) and time.monotonic() < deadline:
+        time.sleep(0.05)
     assert memories[0]["automatic"] and memories[0]["source_message_id"] == completed["output"]["message"]["id"]
     with app.state.runtime.db.sessions() as db:
         assert db.get(Conversation, convo["id"]).summary == "We talked about green"
@@ -130,7 +134,7 @@ def test_additive_upgrade_preserves_old_data_and_snapshots_before_migration(tmp_
     assert "recovery_codes" in inspect(migrated.engine).get_table_names()
     with migrated.engine.connect() as connection:
         assert connection.exec_driver_sql("SELECT name FROM characters WHERE id='keep'").scalar() == "Preserved"
-        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0005"
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar() == "0006"
     assert "generation_metadata" in {c["name"] for c in inspect(migrated.engine).get_columns("assets")}
     backups = list((tmp_path / "backups").glob("daily-*"))
     assert len(backups) == 1

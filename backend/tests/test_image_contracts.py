@@ -53,7 +53,10 @@ def test_ai_characters_get_a_portrait_from_their_own_avatar_quota(service, mode)
     response = client.post("/api/v1/characters/generate", headers=headers, json={"idea": "An imagined botanist", "mode": mode, "language": "de"})
     completed = wait_job(client, headers, response.json()["id"])
     assert completed["status"] == "completed" and completed["output"]["image_error"] is None
-    profile = completed["output"]["character"]
+    # The portrait is painted as its own job, so the character is usable before it is ready.
+    portrait = wait_job(client, headers, completed["output"]["avatar_job"]["id"])
+    assert portrait["status"] == "completed"
+    profile = client.get(f"/api/v1/characters/{completed['output']['character']['id']}", headers=headers).json()
     assert profile["avatar_asset_id"] and len(provider.image_options) == 2
     assert {"gender", "interests", "communication_style", "relationship", "instructions", "appearance", "background"} <= profile["profile"].keys()
     assert profile["language"] == "de" and profile["voice"].startswith("piper:de_DE-")

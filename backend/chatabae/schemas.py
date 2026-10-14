@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -155,6 +155,13 @@ class UserResponse(BaseModel):
     adult_content: bool = False
 
 
+class Persona(Strict):
+    """Who the user is in every chat unless they say otherwise in a conversation."""
+    name: str = Field("", max_length=60)
+    age: int | None = Field(None, ge=1, le=120)
+    about: str = Field("", max_length=600)
+
+
 class AdultContent(Strict):
     enabled: bool
     confirm_adult: bool = False
@@ -226,6 +233,7 @@ class ConversationResponse(BaseModel):
     title: str
     parent_id: str | None = None
     branch_message_id: str | None = None
+    persona: dict[str, Any] = Field(default_factory=dict)
     created_at: str
     updated_at: str
 

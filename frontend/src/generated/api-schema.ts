@@ -612,6 +612,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/persona": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Persona */
+        get: operations["get_persona_api_v1_me_persona_get"];
+        /** Put Persona */
+        put: operations["put_persona_api_v1_me_persona_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/memories/{identifier}": {
         parameters: {
             query?: never;
@@ -1128,6 +1146,10 @@ export interface components {
             id: string;
             /** Parent Id */
             parent_id?: string | null;
+            /** Persona */
+            persona?: {
+                [key: string]: unknown;
+            };
             /** Title */
             title: string;
             /** Updated At */
@@ -1302,6 +1324,24 @@ export interface components {
              * @enum {string}
              */
             role: "user" | "assistant";
+        };
+        /**
+         * Persona
+         * @description Who the user is in every chat unless they say otherwise in a conversation.
+         */
+        Persona: {
+            /**
+             * About
+             * @default
+             */
+            about: string;
+            /** Age */
+            age?: number | null;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
         };
         /** ProfileImprovement */
         ProfileImprovement: {
@@ -2865,6 +2905,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_persona_api_v1_me_persona_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Persona"];
+                };
+            };
+        };
+    };
+    put_persona_api_v1_me_persona_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Persona"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Persona"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -22,7 +22,8 @@ from .db import Asset, AuthSession, Character, Conversation, Favorite, Job, JobE
 from .jobs import Runtime, TERMINAL, UnavailableProviders, XTTS_LICENSE, asset_json, character_json, job_json, message_json, public_snapshot, timestamp
 from .intent import explicit_image_request
 from .media import adopt, asset_path, storage_check
-from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, AvatarRequest, GroupConversationCreate, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
+from .persona import clean_persona
+from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, AvatarRequest, Persona, GroupConversationCreate, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
 
 
 def owned(db, model, identifier, user):
@@ -55,7 +56,7 @@ def readable_char(db, identifier, user=None):
 
 
 def conversation_json(c):
-    return {"id": c.id, "character_id": c.character_id, "character_ids": c.member_ids or [c.character_id], "title": c.title, "parent_id": c.parent_id, "branch_message_id": c.branch_message_id, "created_at": timestamp(c.created_at), "updated_at": timestamp(c.updated_at)}
+    return {"id": c.id, "character_id": c.character_id, "character_ids": c.member_ids or [c.character_id], "title": c.title, "parent_id": c.parent_id, "branch_message_id": c.branch_message_id, "persona": c.persona or {}, "created_at": timestamp(c.created_at), "updated_at": timestamp(c.updated_at)}
 
 
 def memory_json(m):
@@ -161,9 +162,23 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                 raise HTTPException(422, f"{key} is outside the supported range")
         with rt.db.sessions() as db:
             live = db.get(User, user.id)
-            live.preferences = body
+            # The persona has its own endpoint and survives saving display preferences.
+            live.preferences = {**body, **({"persona": live.preferences["persona"]} if "persona" in (live.preferences or {}) else {})}
             db.commit()
             return live.preferences
+
+    @app.get("/api/v1/me/persona", response_model=Persona)
+    async def get_persona(user: User = Depends(current_user)):
+        return Persona.model_validate(clean_persona((user.preferences or {}).get("persona")))
+
+    @app.put("/api/v1/me/persona", response_model=Persona)
+    async def put_persona(body: Persona, user: User = Depends(current_user)):
+        with rt.db.sessions() as db:
+            live = db.get(User, user.id)
+            persona = clean_persona(body.model_dump())
+            live.preferences = {**(live.preferences or {}), "persona": persona}
+            db.commit()
+            return Persona.model_validate(persona)
 
     @app.get("/api/v1/me")
     async def me(user: User = Depends(current_user)):
@@ -556,7 +571,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             message = owned(db, Message, body.message_id, user)
             if message.conversation_id != identifier:
                 raise HTTPException(404, "Message is outside this conversation")
-            convo = Conversation(user_id=user.id, character_id=source.character_id, member_ids=source.member_ids, title=body.title or (source.title[:108] + " · Branch"), parent_id=source.id, branch_message_id=message.id)
+            convo = Conversation(user_id=user.id, character_id=source.character_id, member_ids=source.member_ids, title=body.title or (source.title[:108] + " · Branch"), parent_id=source.id, branch_message_id=message.id, persona=source.persona)
             db.add(convo)
             db.flush()
             entries = db.scalars(select(Message).where(Message.conversation_id == identifier, Message.created_at <= message.created_at).order_by(Message.created_at)).all()
@@ -693,6 +708,7 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
             ping_at = time.monotonic()
             try:
                 while not await request.is_disconnected():
+                    pulse = rt.pulse
                     try:
                         current_user(request)
                     except HTTPException:
@@ -712,7 +728,10 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
                     if time.monotonic() - ping_at > 15:
                         yield ": heartbeat\n\n"
                         ping_at = time.monotonic()
-                    await asyncio.sleep(0.15)
+                    try:
+                        await asyncio.wait_for(pulse.wait(), timeout=0.25)
+                    except TimeoutError:
+                        pass
             finally:
                 rt.sse_counts[user.id] = max(0, rt.sse_counts.get(user.id, 1) - 1)
         return StreamingResponse(stream(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"})

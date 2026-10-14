@@ -654,6 +654,11 @@
             ],
             "title": "Parent Id"
           },
+          "persona": {
+            "additionalProperties": true,
+            "title": "Persona",
+            "type": "object"
+          },
           "title": {
             "title": "Title",
             "type": "string"
@@ -1069,6 +1074,39 @@
           "assets"
         ],
         "title": "MessageResponse",
+        "type": "object"
+      },
+      "Persona": {
+        "additionalProperties": false,
+        "description": "Who the user is in every chat unless they say otherwise in a conversation.",
+        "properties": {
+          "about": {
+            "default": "",
+            "maxLength": 600,
+            "title": "About",
+            "type": "string"
+          },
+          "age": {
+            "anyOf": [
+              {
+                "maximum": 120.0,
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Age"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 60,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "title": "Persona",
         "type": "object"
       },
       "ProfileImprovement": {
@@ -3154,6 +3192,60 @@
           }
         },
         "summary": "Export Me"
+      }
+    },
+    "/api/v1/me/persona": {
+      "get": {
+        "operationId": "get_persona_api_v1_me_persona_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Persona"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Persona"
+      },
+      "put": {
+        "operationId": "put_persona_api_v1_me_persona_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Persona"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Persona"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Put Persona"
       }
     },
     "/api/v1/memories/{identifier}": {

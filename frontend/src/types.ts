@@ -10,6 +10,7 @@ export interface CharacterProfile {
 }
 export type Character = Omit<Schemas['CharacterResponse'], 'profile'> & { profile: CharacterProfile; example?: boolean; color?: string; tag?: string };
 export type Conversation = Schemas['ConversationResponse'];
+export type Persona = Schemas['Persona'];
 export type Asset = Schemas['AssetResponse'];
 export type Message = Schemas['MessageResponse'];
 export type Job = Schemas['JobResponse'];

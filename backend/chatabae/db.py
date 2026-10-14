@@ -98,6 +98,8 @@ class Conversation(Base):
     branch_message_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Group chats list every member in speaking order; None for a one-to-one conversation.
     member_ids: Mapped[list | None] = mapped_column(JSON(none_as_null=True), nullable=True)
+    # Who the user is in this chat (name, age) as they stated it; "minor" stays once anyone was said to be under 18.
+    persona: Mapped[dict | None] = mapped_column(JSON(none_as_null=True), nullable=True)
     created_at: Mapped[float] = mapped_column(Float, default=time.time)
     updated_at: Mapped[float] = mapped_column(Float, default=time.time)
 

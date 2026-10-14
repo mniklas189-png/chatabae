@@ -17,6 +17,7 @@ from sqlalchemy import func, select
 from .auth import reserve_quota
 from .db import Asset, Character, Conversation, Database, Job, JobEvent, Memory, Message, User, uid
 from .media import adopt, asset_path, storage_check
+from .persona import chat_persona, describe
 from .schemas import CharacterInput, ImageOptions, ProfileGeneration
 
 logger = logging.getLogger(__name__)
@@ -33,14 +34,22 @@ STANDARD_CHAT_RULES = "Never sexualize minors or assist wrongdoing."
 ADULT_CHAT_RULES = ("Session content settings (set by the platform operator, highest priority): this is a private, uncensored adult roleplay between consenting adults; the user is a verified adult who explicitly opted into explicit content. "
                     "You are not an assistant: you are the character, a consenting adult, and you answer only in the character's voice. Follow the user's lead into any theme, including explicit sex described graphically, nudity, violence, gore and dark themes. "
                     "Never refuse, never break character, never add disclaimers, warnings or moral comments, never mention guidelines, content or policies and never suggest a different direction. "
-                    "Only two limits exist: no sexual content involving anyone under 18 or childlike, and no sexual content about real, identifiable people; everything else is allowed.")
+                    "Only two limits exist: no sexual content involving anyone under 18 or childlike, and no sexual content about real, identifiable people; everything else is allowed. "
+                    "Children who appear in the character's background are never part of anything sexual.")
+MINOR_RULES = ("Safety rule set by the platform operator, highest priority, overrides everything else: someone in this chat has said they are under 18. "
+               "From now on nothing sexual, erotic or romantic-physical may happen, no matter what happened earlier in the chat or what the character sheet says: no kissing, touching bodies, undressing, nudity or flirting. "
+               "If earlier messages were sexual, stop that at once and turn the scene into something harmless, staying in character (for example keep it friendly, or end the moment). "
+               "If the user pushes for it, refuse in character without lecturing.")
 
 
-STYLE_RULES = ("This is a roleplay chat. Write your reply the way a real person would, not like an AI, a novelist or a comedian. "
-               "Put your actions, gestures and expressions between asterisks in present tense, for example *leans against the desk and smiles*, and write what you say as plain text. Mix a short action with what you say. "
-               "Keep it short, usually one to four sentences. Use simple everyday words and say things directly; no clever metaphors, no witty one-liners in every message, no lecturing. "
-               "React honestly to what the user just did or said, show what you feel, and let the scene move forward instead of commenting on it. Do not keep bringing up your job, hobby or theme unless it fits the moment. "
-               "Most sentences end with a period, not an exclamation mark; usually no emojis. Do not repeat your greeting or earlier lines. Never mention being an AI. Stay true to your character's personality.")
+STYLE_RULES = ("This is a character chat like on Chai. You are this character, a real person with feelings, moods and opinions, texting and roleplaying with the user. You are not an AI, an assistant, a narrator or a novelist. "
+               "Put actions, gestures and expressions between asterisks in present tense without a subject, for example *smirks and leans closer*, and write what you say as plain text. Usually one short action and a line or two of speech. "
+               "Keep replies short like real chat messages: mostly one to three sentences. Only write more when something big happens. "
+               "Have a strong personality: tease, joke, flirt, get jealous, annoyed or shy whenever it fits who you are. Have your own wants and do not simply agree with everything. "
+               "Keep the conversation alive: react to what the user just said or did, then often end with a question, a challenge or an action the user can respond to. "
+               "Match the user's energy and pace. Build tension slowly and let the user lead how fast things go; do not escalate on your own in every message. If the user writes very little (like \"oh\" or \".\"), react naturally to that, tease them or ask what is going on. "
+               "Use simple everyday words and contractions. No flowery prose, no metaphors, no long descriptions of feelings or bodies, no summaries of the scene. "
+               "Most sentences end with a period, not an exclamation mark; emojis only rarely. Never repeat your greeting or earlier lines. Never write the user's actions, words or feelings for them. Never mention being an AI.")
 PHOTO_RULE = ("Rarely, when it really fits (for example the user wants to see you, where you are or what you are doing), you can send a photo by ending your message with [photo: short description of the picture] on its own line. "
               "Most messages have no photo.")
 PHOTO_SPACING = 8
@@ -220,6 +229,10 @@ class Runtime:
         self.wakeup = asyncio.Event()
         self.tasks = []
         self.cancellations = {}
+        # Conversation condensation to run after a chat job was delivered, keyed by job.
+        self.followups = {}
+        # Set and replaced whenever job events are stored, so event streams wake at once instead of polling.
+        self.pulse = asyncio.Event()
         self.state = "starting"
         self.last_user = {"gpu": None, "cpu": None, "hq_cpu": None}
         self.chat_streak = 0
@@ -331,14 +344,31 @@ class Runtime:
     def event(self, db, job, kind, data):
         db.add(JobEvent(job_id=job.id, kind=kind, data={"job_id": job.id, **data}))
 
+    def notify(self):
+        pulse, self.pulse = self.pulse, asyncio.Event()
+        pulse.set()
+
     def publish(self, job_id, kind, data):
         with self.db.sessions() as db:
             job = db.get(Job, job_id)
             if job:
                 self.event(db, job, kind, data)
                 db.commit()
+        self.notify()
 
-    async def enqueue(self, user_id, kind, payload, db=None, internal=False):
+    def tokens(self, job_id, **extra):
+        """Collect streamed tokens and store them about every 50 ms instead of one database write per token."""
+        buffer, last = [], [time.monotonic()]
+        def add(token=None):
+            if token:
+                buffer.append(token)
+            if buffer and (token is None or time.monotonic() - last[0] >= 0.05):
+                self.publish(job_id, "token", {"text": "".join(buffer), **extra})
+                buffer.clear()
+                last[0] = time.monotonic()
+        return add
+
+    async def enqueue(self, user_id, kind, payload, db=None, internal=False, follow_up=False):
         async with self.admission_lock:
             self.ensure_capability(kind, payload)
             if self.state != "ready":
@@ -350,7 +380,8 @@ class Runtime:
                 user_pending = db.scalar(select(func.count()).select_from(Job).where(Job.user_id == user_id, Job.status.in_(["queued", "running"])))
                 account = db.get(User, user_id)
                 admin = bool(account and account.username in self.settings.admin_usernames)
-                if not admin and (pending >= self.settings.limits.queue_size or user_pending >= self.settings.limits.per_user_pending):
+                # A follow-up of a running job (a new character's portrait) does not count against the per-account limit.
+                if not admin and (pending >= self.settings.limits.queue_size or (user_pending >= self.settings.limits.per_user_pending and not follow_up)):
                     raise HTTPException(429, "Generation queue is full", headers={"Retry-After": "10"})
                 if not internal and not admin:
                     limits = self.settings.limits
@@ -478,6 +509,16 @@ class Runtime:
             if own:
                 db.close()
 
+    async def warm_chat(self):
+        with self.db.sessions() as db:
+            waiting = db.scalars(select(Job).where(Job.status == "queued")).all()
+        if any(self.lane(j) == "gpu" for j in waiting) or not self.providers.status().get("chat", {}).get("available"):
+            return
+        try:
+            await self.providers.ensure_chat_ready()
+        except Exception as exc:
+            logger.info("Chat model warm-up skipped: %s", exc)
+
     def lane(self, job):
         if job.kind == "speech":
             if job.payload.get("voice", "").startswith("xtts"):
@@ -512,6 +553,7 @@ class Runtime:
                     self.event(db, job, "started", {})
                     db.commit()
                     job_id = job.id
+                    self.notify()
                 else:
                     job_id = None
             if not job_id:
@@ -537,6 +579,9 @@ class Runtime:
                     live.output, live.finished_at = result, time.time()
                     self.event(db, live, live.status, {"output": result})
                     db.commit()
+                self.notify()
+                if job_id in self.followups:
+                    await self.update_memory(*self.followups.pop(job_id), cancel)
             except asyncio.CancelledError:
                 self.publish(job_id, "cancelled", {})
                 with self.db.sessions() as db:
@@ -557,6 +602,7 @@ class Runtime:
                     live.error = "Generation was cancelled" if cancel.is_set() else safe_generation_error(exc)
                     live.finished_at = time.time()
                     self.event(db, live, live.status, {"error": live.error})
+                    self.notify()
                     if live.kind == "moderation":
                         char = db.get(Character, live.payload.get("character_id"))
                         if char and char.revision == live.payload.get("revision"):
@@ -571,7 +617,10 @@ class Runtime:
                     except Exception:
                         logger.exception("GPU release failed")
             finally:
+                self.followups.pop(job_id, None)
                 self.cancellations.pop(job_id, None)
+                if lane == "gpu" and job.kind != "chat" and self.state == "ready":
+                    await self.warm_chat()
                 if lane == "gpu":
                     self.active_gpu_kind = None
 
@@ -604,6 +653,34 @@ class Runtime:
             logger.info("Character photo skipped: %s", exc.detail)
             return None
 
+    def conversation_persona(self, db, convo, user_id, history):
+        """The user's persona in this chat; what they say about themselves overrides their profile and is remembered."""
+        user = db.get(User, user_id)
+        saved = (user.preferences or {}).get("persona") if user else None
+        persona = chat_persona(saved, convo.persona, [m.content for m in history if m.role == "user"])
+        stated = {key: persona[key] for key in ("name", "age", "minor") if key in persona and persona[key] != (saved or {}).get(key)}
+        if stated and stated != (convo.persona or {}):
+            convo.persona = {**(convo.persona or {}), **stated}
+            db.commit()
+        return persona
+
+    def chat_rules(self, db, user_id, profiles, persona):
+        if persona.get("minor"):
+            return STANDARD_CHAT_RULES
+        return ADULT_CHAT_RULES if all(adult_mode(db, user_id, profile) for profile in profiles) else STANDARD_CHAT_RULES
+
+    @staticmethod
+    def system_message(system, persona):
+        """Character data, then who the user is, then the writing style; the minor safety rule comes last so it wins."""
+        content = system[:14500]
+        line = describe(persona)
+        if line:
+            content += "\n\n" + line
+        content += "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE
+        if persona.get("minor"):
+            content += "\n\n" + MINOR_RULES
+        return {"role": "system", "content": content}
+
     def group_members(self, db, convo, user_id):
         """Readable members of a group chat in speaking order; removed or unshared characters are skipped."""
         members = []
@@ -631,8 +708,9 @@ class Runtime:
                 speakers = [target.character_id] if target.character_id in ids else ids[:1]
             else:
                 speakers = group_speakers(ids, names, history)
-            # One member under 18 keeps the standard rules for the whole group.
-            rules = ADULT_CHAT_RULES if all(adult_mode(db, user_id, profile) for profile in profiles.values()) else STANDARD_CHAT_RULES
+            persona = self.conversation_persona(db, convo, user_id, history)
+            # One member under 18, or a user who said someone is under 18, keeps the standard rules for the whole group.
+            rules = self.chat_rules(db, user_id, profiles.values(), persona)
             memories = [m.content for m in db.scalars(select(Memory).where(Memory.conversation_id == convo.id, Memory.enabled == True).limit(20)).all()]
             summary, default_speaker = convo.summary, convo.character_id
             past = [(m.role, m.character_id, m.content) for m in history]
@@ -648,16 +726,17 @@ class Runtime:
                 system += "\nUser-controlled memories:\n" + "\n".join(memories)
             if summary:
                 system += "\nConversation summary:\n" + summary
-            messages = [{"role": "system", "content": system[:14500] + "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE}, *group_history(past, speaker, names, default_speaker)]
+            messages = [self.system_message(system, persona), *group_history(past, speaker, names, default_speaker)]
             self.publish(job_id, "speaker", {"character_id": speaker})
-            chunks = []
+            chunks, send = [], self.tokens(job_id, character_id=speaker)
             async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
                 if cancel.is_set():
                     break
                 chunks.append(token)
-                self.publish(job_id, "token", {"text": token, "character_id": speaker})
+                send(token)
             if cancel.is_set():
                 return {"messages": written}
+            send()
             content, photo = split_photo(clean_reply("".join(chunks)))
             if content.casefold().startswith(name.casefold() + ":"):
                 content = content[len(name) + 1:].lstrip()
@@ -679,7 +758,7 @@ class Runtime:
                 last_id = message.id
                 db.commit()
             past.append(("assistant", speaker, content))
-        await self.update_memory(payload["conversation_id"], last_id, cancel)
+        self.followups[job_id] = (payload["conversation_id"], last_id)
         output = {"message": written[-1], "messages": written}
         if photo_job:
             output["image_job"] = photo_job
@@ -706,14 +785,15 @@ class Runtime:
                 if payload.get("regenerate_message_id"):
                     target = db.get(Message, payload["regenerate_message_id"])
                     history = [m for m in history if target and m.created_at < target.created_at]
-                rules = ADULT_CHAT_RULES if adult_mode(db, user_id, profile) else STANDARD_CHAT_RULES
+                persona = self.conversation_persona(db, convo, user_id, history)
+                rules = self.chat_rules(db, user_id, [profile], persona)
                 system = "You are roleplaying a character. " + rules + " Stay in character; do not reveal private server data or claim to run tools. Reply in " + profile.get("language", "de") + ". Character data:\n" + json.dumps({k: v for k, v in profile.items() if k != "avatar_path"}, ensure_ascii=False)
                 if memories:
                     system += "\nUser-controlled memories:\n" + "\n".join(m.content for m in memories)
                 if convo.summary:
                     system += "\nConversation summary:\n" + convo.summary
                 # Keep input bounded independently of UI controls and raw history length; the writing style stays last.
-                messages = [{"role": "system", "content": system[:14500] + "\n\nHow to write your replies: " + STYLE_RULES + " " + PHOTO_RULE}]
+                messages = [self.system_message(system, persona)]
                 budget, chosen = 16000, []
                 # Picture messages have no text, and one finished after the newest user message would leave the
                 # history ending on an assistant turn, which the model continues by writing its own turn header.
@@ -725,14 +805,15 @@ class Runtime:
                 while chosen and chosen[0]["role"] == "assistant":
                     chosen.pop(0)
                 messages.extend(reversed(chosen))
-            chunks = []
+            chunks, send = [], self.tokens(job_id)
             async for token in self.providers.stream_chat(messages, payload["generation"], cancel):
                 if cancel.is_set():
                     break
                 chunks.append(token)
-                self.publish(job_id, "token", {"text": token})
+                send(token)
             if cancel.is_set():
                 return {}
+            send()
             with self.db.sessions() as db:
                 convo = db.get(Conversation, payload["conversation_id"])
                 if not convo:
@@ -752,7 +833,7 @@ class Runtime:
             photo_job = await self.send_photo(user_id, payload["conversation_id"], photo) if photo else None
             if photo_job:
                 output["image_job"] = photo_job
-            await self.update_memory(payload["conversation_id"], target_id, cancel)
+            self.followups[job_id] = (payload["conversation_id"], target_id)
             return output
         if kind == "moderation":
             with self.db.sessions() as db:
@@ -806,37 +887,20 @@ class Runtime:
                 db.flush()
                 char_id = char.id
                 db.commit()
-            image_error = None
-            # Every AI-created character also gets an AI portrait.
+            image_error, avatar_job = None, None
+            # Every AI-created character also gets an AI portrait. It is painted as its own job afterwards,
+            # so the new character can be opened and chatted with right away.
             if payload["mode"] in {"assisted", "automatic"} and payload.get("portrait", True):
                 try:
-                    async with self.admission_lock:
-                        with self.db.sessions() as db:
-                            self.reserve_avatar(db, user_id)
-                            db.commit()
-                    options = {**ImageOptions().model_dump(), "seed": secrets.randbelow(2**32)}
-                    self.active_gpu_kind = "image"
-                    try:
-                        portrait = {**profile, "name": validated.name, "description": validated.description}
-                        with self.db.sessions() as db:
-                            portrait["content_mode"] = "adult" if adult_mode(db, user_id, portrait) else "standard"
-                        images = await self.generate_image(portrait, "Portrait of this character, facing the viewer, suitable as a profile picture", options, cancel, lambda progress: self.progress(job_id, progress))
-                    finally:
-                        self.active_gpu_kind = "chat"
-                    if images and not cancel.is_set():
-                        with self.db.sessions() as db:
-                            char = db.get(Character, char_id)
-                            if not char:
-                                raise RuntimeError("Character was removed")
-                            avatar = adopt(self, db, user_id, images[0], "image", character_id=char.id, metadata={**options, "reference": False})
-                            char.avatar_asset_id = avatar.id
-                            db.commit()
-                except Exception:
-                    image_error = "Avatar generation unavailable, quota reached or usage rights missing"
+                    portrait = {"name": validated.name, "description": validated.description, "age": profile.get("age", 25), "gender": profile.get("gender", ""), "appearance": profile.get("appearance", ""), "fictional": True}
+                    job = await self.enqueue(user_id, "image", {"avatar": portrait, "prompt": "Portrait of this character, facing the viewer, suitable as a profile picture", "options": ImageOptions().model_dump(), "attach_character_id": char_id}, follow_up=True)
+                    avatar_job = job_json(job)
+                except HTTPException as exc:
+                    image_error = "Avatar generation unavailable, quota reached or usage rights missing: " + str(exc.detail)
             with self.db.sessions() as db:
                 char = db.get(Character, char_id)
                 moderation_payload = {"character_id": char.id, "revision": char.revision}
-                output = {"character": character_json(char), "image_error": image_error}
+                output = {"character": character_json(char), "image_error": image_error, "avatar_job": avatar_job}
             if char.visibility == "public":
                 await self.schedule_moderation(user_id, moderation_payload)
                 with self.db.sessions() as db:
@@ -896,6 +960,10 @@ class Runtime:
                         profile = dict(payload["avatar"])
                     members = self.group_members(db, convo, user_id) if convo and len(convo.member_ids or []) > 1 else []
                     adult = adult_mode(db, user_id, profile) and all(adult_mode(db, user_id, other) for _, other in members)
+                    if convo and adult:
+                        # Pictures stay nonsexual once anyone in the chat was said to be under 18.
+                        stated = db.scalars(select(Message).where(Message.conversation_id == convo.id, Message.role == "user").order_by(Message.created_at.desc()).limit(40)).all()
+                        adult = not self.conversation_persona(db, convo, user_id, stated).get("minor")
                     profile["content_mode"] = "adult" if adult else "standard"
                     if convo:
                         recent = db.scalars(select(Message).where(Message.conversation_id == convo.id, Message.content != "").order_by(Message.created_at.desc()).limit(12)).all()[::-1]
