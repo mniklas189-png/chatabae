@@ -495,7 +495,7 @@ class ProviderManager:
     async def stream_chat(self, messages: list[dict], generation: dict | None = None, cancel_event: asyncio.Event | None = None, safe: bool = False) -> AsyncIterator[str]:
         """``safe`` answers with the regular (not uncensored) model, which keeps to safety rules the chat model ignores."""
         _cancelled(cancel_event)
-        await _until_cancelled(self.ensure_chat_ready(moderation=safe), cancel_event)
+        await _until_cancelled(self.ensure_chat_ready(moderation=True) if safe else self.ensure_chat_ready(), cancel_event)
         _cancelled(cancel_event)
         payload = self._chat_payload(messages, generation, stream=True)
         payload = await self._fit_chat_context(payload, cancel_event)
