@@ -679,6 +679,66 @@
         "title": "ConversationResponse",
         "type": "object"
       },
+      "DraftImprovement": {
+        "additionalProperties": false,
+        "description": "Improves one field of a character that has not been saved yet; nothing is stored.",
+        "properties": {
+          "description": {
+            "default": "",
+            "maxLength": 1000,
+            "title": "Description",
+            "type": "string"
+          },
+          "field": {
+            "enum": [
+              "name",
+              "description",
+              "personality",
+              "appearance",
+              "background",
+              "interests",
+              "communication_style",
+              "instructions",
+              "relationship",
+              "scenario",
+              "greeting"
+            ],
+            "title": "Field",
+            "type": "string"
+          },
+          "idea": {
+            "default": "",
+            "maxLength": 4000,
+            "title": "Idea",
+            "type": "string"
+          },
+          "language": {
+            "default": "de",
+            "enum": [
+              "de",
+              "en"
+            ],
+            "title": "Language",
+            "type": "string"
+          },
+          "name": {
+            "default": "",
+            "maxLength": 80,
+            "title": "Name",
+            "type": "string"
+          },
+          "profile": {
+            "additionalProperties": true,
+            "title": "Profile",
+            "type": "object"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "title": "DraftImprovement",
+        "type": "object"
+      },
       "Generation": {
         "additionalProperties": false,
         "properties": {
@@ -1824,6 +1884,44 @@
           }
         },
         "summary": "Generate Character"
+      }
+    },
+    "/api/v1/characters/improve": {
+      "post": {
+        "operationId": "improve_draft_api_v1_characters_improve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DraftImprovement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/JobResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Improve Draft"
       }
     },
     "/api/v1/characters/{identifier}": {

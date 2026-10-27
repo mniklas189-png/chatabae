@@ -239,9 +239,17 @@ function Editor() {
   }
   async function generate() { if (!requireAccount()) return; setBusy(true); setError(''); setAvatarProgress(null); try { const job = await endpoint('/api/v1/characters/generate').post<Job>({ idea: idea.trim() || 'Create a new fictional adult character', mode: mode === 'auto' ? 'automatic' : 'assisted', language: draft.language, visibility: draft.visibility, portrait: !avatarFile }); const output = await runJob(job, undefined, undefined, undefined, event => { if (event.event === 'progress') setAvatarProgress(toProgress(event)); }); const character = output.character as Character; if (!character?.id) throw new Error(t.jobFailed); if (avatarFile) { const form = new FormData(); form.set('file', avatarFile); await api('/characters/' + character.id + '/avatar', { method: 'POST', body: form }); } await reload(); if (output.image_error) notify(String(output.image_error), true); const portrait = output.avatar_job as Job | null | undefined; if (portrait?.id) { notify(t.portraitPainting); void runJob(portrait).then(() => reload(), () => undefined); } navigate('/editor/' + character.id); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } }
   async function improve() {
-    if (!id || !improveField || !requireAccount()) return;
+    if (!improveField || !requireAccount()) return;
     const field = improveField; setBusy(true); setError('');
     try {
+      if (!id) {
+        // Unsaved characters get a suggestion only; it lands in the form and is stored with the next save.
+        const job = await endpoint('/api/v1/characters/improve').post<Job>({ field, idea: improveIdea.trim(), name: draft.name.slice(0, 80), description: draft.description.slice(0, 1000), profile: draft.profile, language: draft.language });
+        const output = await runJob(job); const value = output.value;
+        if (typeof value !== 'string' || !value) throw new Error(t.jobFailed);
+        setDraft(current => field === 'name' || field === 'description' ? { ...current, [field]: value } : { ...current, profile: { ...current.profile, [field]: value } });
+        setImproveField(null); setImproveIdea(''); return;
+      }
       const job = await endpoint('/api/v1/characters/{identifier}/improve', { identifier: id }).post<Job>({ field, idea: improveIdea.trim() });
       const output = await runJob(job); const character = output.character as Character | undefined;
       if (!character?.id) throw new Error(output.superseded ? t.improveSuperseded : t.jobFailed);
@@ -249,7 +257,7 @@ function Editor() {
       await reload(); setImproveField(null); setImproveIdea(''); notify(t.saved);
     } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
   }
-  const improveButton = (field: ImproveField) => <button type="button" className="field-ai-button" aria-label={t.improve + ': ' + t[field]} title={id ? t.improve : t.saveBeforeImprove} disabled={busy || !id} onClick={() => { if (requireAccount()) { setImproveField(field); setImproveIdea(''); setError(''); } }}><WandSparkles size={13}/>{t.improve}</button>;
+  const improveButton = (field: ImproveField) => <button type="button" className="field-ai-button" aria-label={t.improve + ': ' + t[field]} title={t.improve} disabled={busy} onClick={() => { if (requireAccount()) { setImproveField(field); setImproveIdea(''); setError(''); } }}><WandSparkles size={13}/>{t.improve}</button>;
   const draftGeneration = draft.profile.generation_settings || defaultGeneration;
   const preview: Character = { ...draft, id: id || 'new-character', name: draft.name || '?', moderation_status: 'pending', avatar_asset_id: existing?.avatar_asset_id || null, moderation_reason: existing?.moderation_reason || '', revision: 1 };
   return <div className="page editor-page"><Link to={id ? '/character/' + id : '/library'} className="back-link"><ArrowLeft size={15}/>{t.back}</Link><div className="page-title"><div><div className="eyebrow">{t.editMode}</div><h1>{id ? t.edit : t.create}</h1><p>{language === 'de' ? 'Die kleinen Details machen eine große Persönlichkeit.' : 'The small details make a big personality.'}</p></div></div>

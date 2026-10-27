@@ -281,6 +281,22 @@ class ProfileImprovement(Strict):
     idea: str = Field("", max_length=4000)
 
 
+class DraftImprovement(ProfileImprovement):
+    """Improves one field of a character that has not been saved yet; nothing is stored."""
+    name: str = Field("", max_length=80)
+    description: str = Field("", max_length=1000)
+    profile: dict = Field(default_factory=dict)
+    language: Literal["de", "en"] = "de"
+
+    @field_validator("profile")
+    @classmethod
+    def check_profile(cls, value):
+        import json
+        if len(json.dumps(value, ensure_ascii=False)) > 16000:
+            raise ValueError("Profile is too large")
+        return value
+
+
 class BranchInput(Strict):
     message_id: str
     title: str | None = Field(None, max_length=120)

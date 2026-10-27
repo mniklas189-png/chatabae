@@ -182,6 +182,23 @@ describe('character space', () => {
     expect(requested).toEqual({ field: 'personality', idea: 'Make them calmer.' });
     expect((screen.getByRole('textbox', { name: 'Background' }) as HTMLTextAreaElement).value).toBe('An unsaved background.');
   });
+  it('improves a field of a character that has not been saved yet', async () => {
+    let requested: Record<string, unknown> = {};
+    const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/characters/improve')) { requested = JSON.parse(String(init?.body)); return body(job('draft-job', 'profile_improve'), 202); }
+      if (url.includes('/jobs/draft-job/events')) return completed({ field: 'personality', value: 'A warm personality.' });
+      return signedInResponse(url, []);
+    });
+    vi.stubGlobal('fetch', fetcher);
+    render(<MemoryRouter initialEntries={['/editor']}><App/></MemoryRouter>);
+    fireEvent.change(await screen.findByRole('textbox', { name: 'Name' }), { target: { value: 'Lena' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Improve with AI: Personality' }));
+    const dialog = await screen.findByRole('dialog');
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Improve with AI' }));
+    await waitFor(() => expect((screen.getByRole('textbox', { name: 'Personality' }) as HTMLTextAreaElement).value).toBe('A warm personality.'));
+    expect(requested).toMatchObject({ field: 'personality', name: 'Lena' });
+    expect((screen.getByRole('textbox', { name: 'Name' }) as HTMLInputElement).value).toBe('Lena');
+  });
   it('uploads a private WAV reference only after explicit voice permission and stores only its voice ID', async () => {
     const reference = { id: 'xtts:ref:private-reference', name: 'My private voice', engine: 'xtts', language: 'en', available: true, reference_asset_id: 'private-reference' };
     const catalog = [{ id: 'xtts:stock', name: 'Stock voice', engine: 'xtts', language: 'en', available: true }];

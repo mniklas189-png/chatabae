@@ -919,6 +919,21 @@ class Runtime:
                     if char:
                         output["character"] = character_json(char)
             return output
+        if kind == "profile_improve" and "draft" in payload:
+            # Unsaved characters only get a suggested value back; the editor keeps it until the user saves.
+            draft, field = payload["draft"], payload["field"]
+            current = draft.get(field, "") if field in {"name", "description"} else draft["profile"].get(field, "")
+            with self.db.sessions() as db:
+                adult = adult_mode(db, user_id, draft["profile"])
+            known = {k: v for k, v in {"name": draft.get("name"), "description": draft.get("description"), **draft["profile"]}.items() if v not in (None, "") and k != "generation_settings"}
+            idea = f"Improve only {field} of this character draft: {json.dumps(known, ensure_ascii=False)[:6000]}. Current {field}: {json.dumps(current, ensure_ascii=False)[:4000]}. Requested change: {payload.get('idea', '')[:2000] or 'make it richer and more vivid'}. Write in {'German' if draft.get('language') == 'de' else 'English'}. Return a complete character JSON with the revised {field}; keep everything else consistent with the draft."
+            generated = await self.providers.create_profile(idea, "assisted", adult=adult)
+            value = generated.get(field, generated.get("backstory") if field == "background" else None)
+            if isinstance(value, list):
+                value = ", ".join(str(item) for item in value)
+            if not isinstance(value, str) or not value.strip():
+                raise RuntimeError("Provider did not return the requested field")
+            return {"field": field, "value": value.strip()[:{"name": 80, "description": 1000}.get(field, 4000)]}
         if kind == "profile_improve":
             with self.db.sessions() as db:
                 char = db.get(Character, payload["character_id"])

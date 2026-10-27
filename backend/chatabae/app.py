@@ -23,7 +23,7 @@ from .jobs import Runtime, TERMINAL, UnavailableProviders, XTTS_LICENSE, asset_j
 from .intent import explicit_image_request
 from .media import adopt, asset_path, storage_check
 from .persona import clean_persona
-from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, AvatarRequest, Persona, GroupConversationCreate, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
+from .schemas import AssetResponse, BranchInput, CharacterInput, CharacterResponse, CharacterPatch, ConversationCreate, DraftImprovement, ConversationInput, ConversationResponse, ImageRequest, JobResponse, MemoryInput, MemoryResponse, MessageResponse, AdultContent, AvatarRequest, Persona, GroupConversationCreate, ProfileGeneration, ProfileImprovement, ProfileRequest, Regenerate, ReportInput, SpeechRequest, TextUpdate, Turn, TurnResponse, UserResponse
 
 
 def owned(db, model, identifier, user):
@@ -276,6 +276,10 @@ def create_app(settings: Settings | None = None, providers=None) -> FastAPI:
     @app.post("/api/v1/characters/generate", status_code=202, response_model=JobResponse)
     async def generate_character(body: ProfileRequest, user: User = Depends(current_user)):
         return job_json(await rt.enqueue(user.id, "profile", body.model_dump()))
+
+    @app.post("/api/v1/characters/improve", status_code=202, response_model=JobResponse)
+    async def improve_draft(body: DraftImprovement, user: User = Depends(current_user)):
+        return job_json(await rt.enqueue(user.id, "profile_improve", {"draft": body.model_dump(exclude={"field", "idea"}), "field": body.field, "idea": body.idea}))
 
     @app.get("/api/v1/characters/{identifier}", response_model=CharacterResponse)
     async def get_character(identifier: str, request: Request):

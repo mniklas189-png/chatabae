@@ -143,3 +143,13 @@ def test_additive_upgrade_preserves_old_data_and_snapshots_before_migration(tmp_
         assert before.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0001"
     before.close()
     migrated.close()
+
+
+def test_unsaved_draft_field_improvement_returns_value_without_saving(service):
+    client, _, _ = service
+    headers, _, _ = register(client)
+    draft = {"field": "personality", "idea": "Make it warmer", "name": "", "description": "A night baker", "profile": {"age": "", "personality": ""}, "language": "en"}
+    job = client.post("/api/v1/characters/improve", headers=headers, json=draft).json()
+    done = wait_job(client, headers, job["id"])
+    assert done["status"] == "completed" and done["output"] == {"field": "personality", "value": "Curious"}
+    assert client.get("/api/v1/characters", headers=headers).json() == []
